@@ -765,6 +765,43 @@ function vit_test_connection( $api_url, $api_key ) {
         $log[] = '[FALHA] TCP: não conseguiu conectar em ' . $host . ':' . $port;
         $log[] = '        Erro: ' . $errstr . ' (código ' . $errno . ')';
         $log[] = '        Causa provável: servidor externo fora do ar, ou firewall bloqueando saída na porta ' . $port . '.';
+
+        // --- Etapa 2b: Tentativas alternativas ---
+        $log[] = '';
+        $log[] = '--- Etapa 2b: Tentativas alternativas de conexão ---';
+
+        $alternatives = [
+            [ 'label' => 'HTTP porta 80',         'prefix' => '',       'sock_host' => $host, 'port' => 80,   'scheme' => 'http',  'url_host' => $host ],
+            [ 'label' => 'IP direto porta 443',   'prefix' => 'ssl://', 'sock_host' => $ip,   'port' => 443,  'scheme' => 'https', 'url_host' => $ip   ],
+            [ 'label' => 'IP direto porta 80',    'prefix' => '',       'sock_host' => $ip,   'port' => 80,   'scheme' => 'http',  'url_host' => $ip   ],
+            [ 'label' => 'Porta 8443 (SSL alt)',  'prefix' => 'ssl://', 'sock_host' => $host, 'port' => 8443, 'scheme' => 'https', 'url_host' => $host ],
+            [ 'label' => 'Porta 8080 (HTTP alt)', 'prefix' => '',       'sock_host' => $host, 'port' => 8080, 'scheme' => 'http',  'url_host' => $host ],
+        ];
+
+        $working_urls = [];
+        foreach ( $alternatives as $alt ) {
+            $ae = 0; $as = '';
+            $s  = @fsockopen( $alt['prefix'] . $alt['sock_host'], $alt['port'], $ae, $as, 8 );
+            if ( $s ) {
+                fclose( $s );
+                $url = $alt['scheme'] . '://' . $alt['url_host'];
+                if ( ! in_array( $alt['port'], [ 80, 443 ], true ) ) {
+                    $url .= ':' . $alt['port'];
+                }
+                $log[]          = '[OK] ' . $alt['label'] . ': conectou! → Use esta URL: ' . $url;
+                $working_urls[] = $url;
+            } else {
+                $log[] = '[FALHA] ' . $alt['label'] . ': ' . $as . ' (código ' . $ae . ')';
+            }
+        }
+
+        $log[] = '';
+        if ( ! empty( $working_urls ) ) {
+            $log[] = '>> Alternativa(s) encontrada(s). Atualize o campo "API URL" com uma das URLs acima e tente importar novamente.';
+            return [ 'status' => 'warning', 'log' => $log ];
+        }
+
+        $log[] = '>> Nenhuma alternativa funcionou. Contate sua hospedagem para liberar saída na porta 443.';
         return [ 'status' => 'error', 'log' => $log ];
     }
     fclose( $sock );

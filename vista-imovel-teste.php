@@ -29,4 +29,5 @@ require_once VIT_PLUGIN_PATH . 'includes/import-logic.php';
 add_action( 'init', 'vit_register_imoveis_post_type' );
 add_action( 'admin_menu', 'vit_add_admin_menu' );
 add_action( 'admin_post_vit_import_single_property', 'vit_handle_import_single_property' );
+add_action( 'admin_post_vit_test_connection', 'vit_handle_test_connection' );
 

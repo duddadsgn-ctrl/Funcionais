@@ -316,9 +316,12 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
  * GET helper simples — retorna array decodificado ou WP_Error.
  */
 function vit_raw_get( $url, &$log ) {
+    @ini_set( 'default_socket_timeout', 35 );
     $raw = wp_remote_get( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Accept' => 'application/json' ],
+        'timeout'         => 30,
+        'connect_timeout' => 15,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
     ] );
 
     if ( is_wp_error( $raw ) ) {
@@ -362,9 +365,12 @@ function vit_call_api_get( $base_url, $endpoint, $api_key, $params, &$log ) {
     $log[] = 'Endpoint   : GET ' . $endpoint;
     $log[] = 'Pesquisa   : ' . wp_json_encode( $params, JSON_UNESCAPED_UNICODE );
 
+    @ini_set( 'default_socket_timeout', 35 );
     $response = wp_remote_get( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Accept' => 'application/json' ],
+        'timeout'         => 30,
+        'connect_timeout' => 15,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
     ] );
     return vit_handle_api_response( $response, $log );
 }
@@ -379,10 +385,13 @@ function vit_call_api_post( $base_url, $endpoint, $api_key, $post_fields, &$log 
     $log[] = 'Endpoint   : POST ' . $endpoint;
     $log[] = 'Payload    : ' . wp_json_encode( $post_fields, JSON_UNESCAPED_UNICODE );
 
+    @ini_set( 'default_socket_timeout', 35 );
     $response = wp_remote_post( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
-        'body'    => wp_json_encode( $post_fields ),
+        'timeout'         => 30,
+        'connect_timeout' => 15,
+        'sslverify'       => false,
+        'headers'         => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
+        'body'            => wp_json_encode( $post_fields ),
     ] );
     return vit_handle_api_response( $response, $log );
 }
@@ -704,4 +713,136 @@ function vit_sideload_image( $file_url, $post_id, $desc ) {
         return $id;
     }
     return (int) $id;
+}
+
+/**
+ * Testa a conectividade com o servidor da API passo a passo.
+ * Retorna array com log detalhado de cada etapa.
+ */
+function vit_test_connection( $api_url, $api_key ) {
+    $log    = [];
+    $log[]  = '================ TESTE DE CONEXÃO ================';
+    $log[]  = 'Data/hora : ' . current_time( 'mysql' );
+    $log[]  = 'API URL   : ' . $api_url;
+    $log[]  = '';
+
+    $parsed = wp_parse_url( $api_url );
+    $host   = $parsed['host'] ?? '';
+    $scheme = $parsed['scheme'] ?? 'https';
+    $port   = $parsed['port'] ?? ( $scheme === 'https' ? 443 : 80 );
+
+    if ( empty( $host ) ) {
+        $log[] = '[ERRO] URL inválida — não foi possível extrair o host.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+
+    // --- Etapa 1: Resolução DNS ---
+    $log[] = '--- Etapa 1: Resolução DNS ---';
+    $ip = gethostbyname( $host );
+    if ( $ip === $host ) {
+        $log[] = '[FALHA] DNS: não foi possível resolver "' . $host . '" em um endereço IP.';
+        $log[] = '        Causa provável: problema de DNS no servidor WordPress ou hostname incorreto.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    $log[] = '[OK] DNS: "' . $host . '" resolvido para ' . $ip;
+
+    // --- Etapa 2: Conexão TCP ---
+    $log[]  = '';
+    $log[]  = '--- Etapa 2: Conexão TCP na porta ' . $port . ' ---';
+    $errno  = 0;
+    $errstr = '';
+    $sock   = @fsockopen( ( $scheme === 'https' ? 'ssl://' : '' ) . $host, $port, $errno, $errstr, 10 );
+    if ( ! $sock ) {
+        $log[] = '[FALHA] TCP: não conseguiu conectar em ' . $host . ':' . $port;
+        $log[] = '        Erro: ' . $errstr . ' (código ' . $errno . ')';
+        $log[] = '        Causa provável: servidor externo fora do ar, ou firewall bloqueando saída na porta ' . $port . '.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    fclose( $sock );
+    $log[] = '[OK] TCP: conexão estabelecida com ' . $host . ':' . $port;
+
+    // --- Etapa 3: Requisição HTTPS ---
+    $log[] = '';
+    $log[] = '--- Etapa 3: Requisição HTTPS (GET /) ---';
+    @ini_set( 'default_socket_timeout', 35 );
+    $resp = wp_remote_get( rtrim( $api_url, '/' ) . '/', [
+        'timeout'         => 15,
+        'connect_timeout' => 10,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
+    ] );
+    if ( is_wp_error( $resp ) ) {
+        $log[] = '[FALHA] HTTPS: ' . $resp->get_error_message();
+        $log[] = '        Causa provável: problema de certificado SSL ou servidor recusando a requisição.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    $http = wp_remote_retrieve_response_code( $resp );
+    $log[] = '[OK] HTTPS: servidor respondeu com HTTP ' . $http;
+
+    // --- Etapa 4: Teste de autenticação (listar com key) ---
+    if ( ! empty( $api_key ) ) {
+        $log[] = '';
+        $log[] = '--- Etapa 4: Teste de autenticação com API Key ---';
+        $test_url = add_query_arg( [
+            'key'      => $api_key,
+            'pesquisa' => wp_json_encode( [ 'fields' => [ 'Codigo' ], 'paginacao' => [ 'pagina' => 1, 'quantidade' => 1 ] ] ),
+        ], rtrim( $api_url, '/' ) . '/imoveis/listar' );
+
+        @ini_set( 'default_socket_timeout', 35 );
+        $auth_resp = wp_remote_get( $test_url, [
+            'timeout'         => 20,
+            'connect_timeout' => 10,
+            'sslverify'       => false,
+            'headers'         => [ 'Accept' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $auth_resp ) ) {
+            $log[] = '[FALHA] Auth: ' . $auth_resp->get_error_message();
+            return [ 'status' => 'error', 'log' => $log ];
+        }
+        $auth_http = wp_remote_retrieve_response_code( $auth_resp );
+        $auth_body = wp_remote_retrieve_body( $auth_resp );
+        $auth_dec  = json_decode( $auth_body, true );
+
+        if ( $auth_http === 200 ) {
+            $count = is_array( $auth_dec ) ? count( array_filter( array_keys( $auth_dec ), 'is_numeric' ) ) : '?';
+            $log[] = '[OK] Auth: HTTP 200 — API Key válida. Registros retornados: ' . $count;
+        } elseif ( $auth_http === 401 || $auth_http === 403 ) {
+            $log[] = '[FALHA] Auth: HTTP ' . $auth_http . ' — API Key inválida ou sem permissão.';
+            return [ 'status' => 'error', 'log' => $log ];
+        } else {
+            $msg = ( is_array( $auth_dec ) && isset( $auth_dec['message'] ) ) ? $auth_dec['message'] : substr( $auth_body, 0, 200 );
+            $log[] = '[AVISO] Auth: HTTP ' . $auth_http . ' — ' . $msg;
+        }
+    }
+
+    $log[] = '';
+    $log[] = '================== RESULTADO ==================';
+    $log[] = 'Conexão com "' . $host . '" está OK!';
+    $log[] = 'Se a importação ainda falhar, verifique a API Key e os parâmetros de busca.';
+
+    return [ 'status' => 'success', 'log' => $log ];
+}
+
+/**
+ * Handler do botão "Testar Conexão".
+ */
+function vit_handle_test_connection() {
+    if ( ! isset( $_POST['vit_test_nonce_field'] ) || ! wp_verify_nonce( $_POST['vit_test_nonce_field'], 'vit_test_nonce_action' ) ) {
+        wp_die( 'Falha na verificação de segurança (nonce).' );
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'Você não tem permissão para executar esta ação.' );
+    }
+
+    $api_url = esc_url_raw( $_POST['vit_api_url'] ?? '' );
+    $api_key = sanitize_text_field( $_POST['vit_api_key'] ?? '' );
+
+    update_option( 'vit_api_url', $api_url );
+    update_option( 'vit_api_key', $api_key );
+
+    $result = vit_test_connection( $api_url, $api_key );
+    set_transient( 'vit_test_report', $result, 120 );
+    wp_redirect( admin_url( 'admin.php?page=vista-imovel-teste' ) );
+    exit;
 }

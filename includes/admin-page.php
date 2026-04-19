@@ -25,6 +25,24 @@ function vit_admin_page_html() {
         </p>
 
         <?php
+        $test_report = get_transient( 'vit_test_report' );
+        if ( $test_report ) {
+            $test_class = ( $test_report['status'] === 'success' ) ? 'notice-success' : 'notice-error';
+            echo '<div class="notice ' . esc_attr( $test_class ) . ' is-dismissible">';
+            echo '<h3>Resultado do Teste de Conexão</h3>';
+            echo '<ul style="font-family: monospace; font-size: 13px; line-height: 1.8;">';
+            foreach ( $test_report['log'] as $message ) {
+                $color = '';
+                if ( strpos( $message, '[OK]' ) === 0 )    $color = 'color:#1a7a1a;font-weight:bold;';
+                if ( strpos( $message, '[FALHA]' ) === 0 ) $color = 'color:#b22222;font-weight:bold;';
+                if ( strpos( $message, '[AVISO]' ) === 0 ) $color = 'color:#c07000;font-weight:bold;';
+                echo '<li style="' . esc_attr( $color ) . '">' . esc_html( $message ) . '</li>';
+            }
+            echo '</ul>';
+            echo '</div>';
+            delete_transient( 'vit_test_report' );
+        }
+
         $report = get_transient( 'vit_import_report' );
         if ( $report ) {
             $notice_class = ( $report['status'] === 'success' ) ? 'notice-success' : 'notice-error';
@@ -67,6 +85,17 @@ function vit_admin_page_html() {
             </table>
 
             <?php submit_button( 'Importar 1 imóvel de teste' ); ?>
+        </form>
+
+        <hr>
+        <h3>Diagnóstico de Conexão</h3>
+        <p>Use este botão para testar se o servidor consegue se conectar à API Vista antes de importar.</p>
+        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
+            <input type="hidden" name="action" value="vit_test_connection">
+            <input type="hidden" name="vit_api_url" value="<?php echo esc_attr( get_option( 'vit_api_url', 'https://cli41034-rest.vistahost.com.br' ) ); ?>">
+            <input type="hidden" name="vit_api_key" value="<?php echo esc_attr( get_option( 'vit_api_key', '' ) ); ?>">
+            <?php wp_nonce_field( 'vit_test_nonce_action', 'vit_test_nonce_field' ); ?>
+            <?php submit_button( 'Testar Conexão', 'secondary' ); ?>
         </form>
     </div>
     <?php

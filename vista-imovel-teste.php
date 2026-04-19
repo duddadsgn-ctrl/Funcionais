@@ -22,6 +22,7 @@ define( 'VIT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 // Incluir arquivos necessários
 require_once VIT_PLUGIN_PATH . 'includes/post-type.php';
+require_once VIT_PLUGIN_PATH . 'includes/class-vista-price-formatter.php';
 require_once VIT_PLUGIN_PATH . 'includes/admin-page.php';
 require_once VIT_PLUGIN_PATH . 'includes/import-logic.php';
 

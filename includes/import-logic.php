@@ -493,10 +493,6 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         'vagas'           => 'Vagas',
         'area_total'      => 'AreaTotal',
         'area_privativa'  => 'AreaPrivativa',
-        'valor_venda'     => 'ValorVenda',
-        'valor_locacao'   => 'ValorLocacao',
-        'valor_iptu'      => 'ValorIptu',
-        'valor_condominio' => 'ValorCondominio',
     ];
 
     foreach ( $map as $meta_key => $api_key ) {
@@ -513,6 +509,19 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         if ( mb_strlen( $preview ) > 60 ) $preview = mb_substr( $preview, 0, 60 ) . '...';
         update_post_meta( $post_id, $meta_key, $clean );
         $log[] = sprintf( "[CAMPO] API:'%s' -> WP:'%s' | origem=%s | Valor: \"%s\" | OK SALVO", $api_key, $meta_key, $origin, $preview );
+        $counters['saved']++;
+    }
+
+    // Campos monetários (formatter isolado)
+    $price_fields = Vista_Price_Formatter::build_price_fields( $data );
+    foreach ( $price_fields as $meta_key => $meta_value ) {
+        if ( $meta_value === '' ) {
+            $log[] = sprintf( "[PREÇO] WP:'%s' | Valor: \"\" | - VAZIO (ignorado)", $meta_key );
+            $counters['empty']++;
+            continue;
+        }
+        update_post_meta( $post_id, $meta_key, $meta_value );
+        $log[] = sprintf( "[PREÇO] WP:'%s' | Valor: \"%s\" | OK SALVO", $meta_key, $meta_value );
         $counters['saved']++;
     }
 

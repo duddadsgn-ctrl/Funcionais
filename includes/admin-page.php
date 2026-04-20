@@ -132,16 +132,6 @@ function vit_admin_page_html() {
             <?php submit_button( 'Importar 1 imóvel de teste' ); ?>
         </form>
 
-        <hr>
-        <h3>Diagnóstico de Conexão</h3>
-        <p>Use este botão para testar se o servidor consegue se conectar à API Vista antes de importar.</p>
-        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post">
-            <input type="hidden" name="action" value="vit_test_connection">
-            <input type="hidden" name="vit_api_url" value="<?php echo esc_attr( get_option( 'vit_api_url', 'https://cli41034-rest.vistahost.com.br' ) ); ?>">
-            <input type="hidden" name="vit_api_key" value="<?php echo esc_attr( get_option( 'vit_api_key', '' ) ); ?>">
-            <?php wp_nonce_field( 'vit_test_nonce_action', 'vit_test_nonce_field' ); ?>
-            <?php submit_button( 'Testar Conexão', 'secondary' ); ?>
-        </form>
     </div>
     <?php
 }

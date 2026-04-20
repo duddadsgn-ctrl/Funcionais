@@ -23,6 +23,7 @@ define( 'VIT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 // Incluir arquivos necessários
 require_once VIT_PLUGIN_PATH . 'includes/post-type.php';
 require_once VIT_PLUGIN_PATH . 'includes/class-vista-price-formatter.php';
+require_once VIT_PLUGIN_PATH . 'includes/connection-monitor.php';
 require_once VIT_PLUGIN_PATH . 'includes/admin-page.php';
 require_once VIT_PLUGIN_PATH . 'includes/import-logic.php';
 
@@ -31,4 +32,13 @@ add_action( 'init', 'vit_register_imoveis_post_type' );
 add_action( 'admin_menu', 'vit_add_admin_menu' );
 add_action( 'admin_post_vit_import_single_property', 'vit_handle_import_single_property' );
 add_action( 'admin_post_vit_test_connection', 'vit_handle_test_connection' );
+add_action( 'admin_post_vit_manual_check', 'vit_handle_manual_check' );
+
+// Cron: verificação horária de conectividade
+add_action( 'vit_hourly_connection_check', 'vit_cron_connection_check' );
+add_action( 'init', function () {
+    if ( ! wp_next_scheduled( 'vit_hourly_connection_check' ) ) {
+        wp_schedule_event( time(), 'hourly', 'vit_hourly_connection_check' );
+    }
+} );
 

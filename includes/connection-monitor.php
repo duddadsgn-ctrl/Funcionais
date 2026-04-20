@@ -4,101 +4,85 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Executa uma verificação rápida de conectividade e salva o resultado.
- * Usado tanto pelo cron horário quanto pelo botão manual.
+ * Executa verificação de conectividade e salva o resultado como opção persistente.
+ * Gera o mesmo formato de log do diagnóstico manual (linhas [OK]/[FALHA]).
  */
 function vit_run_connection_check( string $api_url = '' ): array {
     if ( empty( $api_url ) ) {
         $api_url = get_option( 'vit_api_url', '' );
     }
 
+    $log    = [];
+    $log[]  = '================ VERIFICAÇÃO DE CONEXÃO ================';
+    $log[]  = 'Data/hora : ' . current_time( 'mysql' );
+    $log[]  = 'API URL   : ' . $api_url;
+    $log[]  = '';
+
     $parsed = wp_parse_url( $api_url );
     $host   = $parsed['host'] ?? '';
     $scheme = $parsed['scheme'] ?? 'https';
     $port   = $parsed['port'] ?? ( $scheme === 'https' ? 443 : 80 );
 
-    $result = [
-        'checked_at' => current_time( 'mysql' ),
-        'api_url'    => $api_url,
-        'host'       => $host,
-        'ip'         => '',
-        'steps'      => [],
-        'status'     => 'error',
-        'summary'    => '',
-    ];
-
     if ( empty( $host ) ) {
-        $result['summary'] = 'URL da API não configurada. Salve a URL antes de verificar.';
+        $log[]  = '[FALHA] URL da API não configurada ou inválida.';
+        $result = [ 'status' => 'error', 'log' => $log ];
         update_option( 'vit_connection_status', $result );
         return $result;
     }
 
-    // Passo 1: Resolução DNS
-    $ip             = gethostbyname( $host );
-    $result['ip']   = $ip;
-    $dns_ok         = ( $ip !== $host );
-    $result['steps'][] = [
-        'label' => 'DNS',
-        'path'  => '"' . $host . '"',
-        'ok'    => $dns_ok,
-        'msg'   => $dns_ok
-            ? 'Resolvido para ' . $ip
-            : 'Falha — hostname não reconhecido pelo servidor WordPress',
-    ];
-    if ( ! $dns_ok ) {
-        $result['summary'] = 'DNS não conseguiu resolver o hostname. Verifique a URL configurada.';
+    // --- Etapa 1: Resolução DNS ---
+    $log[] = '--- Etapa 1: Resolução DNS ---';
+    $ip    = gethostbyname( $host );
+    if ( $ip === $host ) {
+        $log[] = '[FALHA] DNS: não foi possível resolver "' . $host . '" em um endereço IP.';
+        $log[] = '        Causa provável: hostname incorreto ou problema de DNS no servidor WordPress.';
+        $result = [ 'status' => 'error', 'log' => $log ];
         update_option( 'vit_connection_status', $result );
         return $result;
     }
+    $log[] = '[OK] DNS: "' . $host . '" resolvido para ' . $ip;
 
-    // Passo 2: Conexão TCP
+    // --- Etapa 2: Conexão TCP ---
+    $log[]  = '';
+    $log[]  = '--- Etapa 2: Conexão TCP na porta ' . $port . ' ---';
     $errno  = 0;
     $errstr = '';
     $sock   = @fsockopen( ( $scheme === 'https' ? 'ssl://' : '' ) . $host, $port, $errno, $errstr, 10 );
-    $tcp_ok = (bool) $sock;
-    if ( $sock ) {
-        fclose( $sock );
-    }
-    $result['steps'][] = [
-        'label' => 'TCP',
-        'path'  => $ip . ':' . $port,
-        'ok'    => $tcp_ok,
-        'msg'   => $tcp_ok
-            ? 'Porta ' . $port . ' aberta'
-            : 'Porta ' . $port . ' bloqueada — ' . $errstr . ' (código ' . $errno . ')',
-    ];
-    if ( ! $tcp_ok ) {
-        $result['summary'] = 'Porta ' . $port . ' inacessível. Provável bloqueio de firewall na hospedagem ou servidor externo fora do ar.';
+    if ( ! $sock ) {
+        $log[] = '[FALHA] TCP: não conseguiu conectar em ' . $host . ':' . $port;
+        $log[] = '        Erro: ' . $errstr . ' (código ' . $errno . ')';
+        $log[] = '        Causa provável: servidor externo fora do ar, ou firewall bloqueando saída na porta ' . $port . '.';
+        $result = [ 'status' => 'error', 'log' => $log ];
         update_option( 'vit_connection_status', $result );
         return $result;
     }
+    fclose( $sock );
+    $log[] = '[OK] TCP: porta ' . $port . ' aberta — ' . $host . ' (' . $ip . ')';
 
-    // Passo 3: Requisição HTTP
+    // --- Etapa 3: Requisição HTTP ---
+    $log[] = '';
+    $log[] = '--- Etapa 3: Requisição HTTP ---';
     @ini_set( 'default_socket_timeout', 20 );
-    $resp    = wp_remote_get( rtrim( $api_url, '/' ) . '/', [
+    $resp = wp_remote_get( rtrim( $api_url, '/' ) . '/', [
         'timeout'         => 15,
         'connect_timeout' => 10,
         'sslverify'       => false,
         'headers'         => [ 'Accept' => 'application/json' ],
     ] );
-    $http_ok = ! is_wp_error( $resp );
-    $http_code = $http_ok ? wp_remote_retrieve_response_code( $resp ) : 0;
-    $result['steps'][] = [
-        'label' => 'HTTP',
-        'path'  => $scheme . '://' . $host . '/',
-        'ok'    => $http_ok,
-        'msg'   => $http_ok
-            ? 'Servidor respondeu HTTP ' . $http_code
-            : 'Erro: ' . $resp->get_error_message(),
-    ];
-    if ( ! $http_ok ) {
-        $result['summary'] = 'TCP conectou mas a requisição HTTP falhou. Pode ser problema de SSL ou firewall na aplicação.';
+    if ( is_wp_error( $resp ) ) {
+        $log[] = '[FALHA] HTTP: ' . $resp->get_error_message();
+        $log[] = '        Causa provável: problema de certificado SSL ou servidor recusando a requisição.';
+        $result = [ 'status' => 'error', 'log' => $log ];
         update_option( 'vit_connection_status', $result );
         return $result;
     }
+    $http  = wp_remote_retrieve_response_code( $resp );
+    $log[] = '[OK] HTTP: servidor respondeu com HTTP ' . $http;
 
-    $result['status']  = 'ok';
-    $result['summary'] = 'Todos os caminhos verificados. Conexão estável para importação.';
+    $log[] = '';
+    $log[] = '>> Conexão estável. A importação pode ser executada.';
+
+    $result = [ 'status' => 'ok', 'log' => $log ];
     update_option( 'vit_connection_status', $result );
     return $result;
 }

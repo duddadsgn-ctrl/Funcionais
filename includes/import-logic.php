@@ -160,6 +160,19 @@ function vit_import_property( $api_url, $api_key ) {
     $log[] = 'Campos salvos        : ' . $field_counters['saved'];
     $log[] = 'Campos vazios        : ' . $field_counters['empty'];
     $log[] = '';
+    $log[] = 'Campos de Valor:';
+    $price_summary = Vista_Price_Formatter::build_price_fields( $property_data );
+    foreach ( [
+        'valor_venda'      => 'Venda     ',
+        'valor_locacao'    => 'Locação   ',
+        'valor_iptu'       => 'IPTU      ',
+        'valor_condominio' => 'Condomínio',
+    ] as $pk => $label ) {
+        $raw = $price_summary[ $pk ]                ?? '';
+        $fmt = $price_summary[ $pk . '_formatado' ] ?? '';
+        $log[] = '  ' . $label . ' : ' . ( $raw !== '' ? $raw . '  →  ' . $fmt : '-' );
+    }
+    $log[] = '';
     $log[] = 'Imagens encontradas  : ' . $image_counters['found'];
     $log[] = 'Imagens importadas   : ' . $image_counters['imported'];
     $log[] = 'Imagens falhadas     : ' . $image_counters['failed'];
@@ -512,17 +525,34 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         $counters['saved']++;
     }
 
-    // Campos monetários (formatter isolado)
-    $price_fields = Vista_Price_Formatter::build_price_fields( $data );
-    foreach ( $price_fields as $meta_key => $meta_value ) {
-        if ( $meta_value === '' ) {
-            $log[] = sprintf( "[PREÇO] WP:'%s' | Valor: \"\" | - VAZIO (ignorado)", $meta_key );
-            $counters['empty']++;
+    // Campos monetários — bruto + formatado logados em par por campo
+    $price_fields   = Vista_Price_Formatter::build_price_fields( $data );
+    $price_api_map  = [
+        'ValorVenda'      => 'valor_venda',
+        'ValorLocacao'    => 'valor_locacao',
+        'ValorIptu'       => 'valor_iptu',
+        'ValorCondominio' => 'valor_condominio',
+    ];
+    foreach ( $price_api_map as $api_key => $wp_key ) {
+        $raw = $price_fields[ $wp_key ]                ?? '';
+        $fmt = $price_fields[ $wp_key . '_formatado' ] ?? '';
+
+        if ( $raw === '' ) {
+            $log[] = sprintf(
+                "[PREÇO] API:'%s' → WP:'%s' = \"\" | WP:'%s_formatado' = \"\" | - VAZIO (ignorado)",
+                $api_key, $wp_key, $wp_key
+            );
+            $counters['empty'] += 2;
             continue;
         }
-        update_post_meta( $post_id, $meta_key, $meta_value );
-        $log[] = sprintf( "[PREÇO] WP:'%s' | Valor: \"%s\" | OK SALVO", $meta_key, $meta_value );
-        $counters['saved']++;
+
+        update_post_meta( $post_id, $wp_key, $raw );
+        update_post_meta( $post_id, $wp_key . '_formatado', $fmt );
+        $log[] = sprintf(
+            "[PREÇO] API:'%s' → WP:'%s' = \"%s\" | WP:'%s_formatado' = \"%s\" | OK SALVO",
+            $api_key, $wp_key, $raw, $wp_key, $fmt
+        );
+        $counters['saved'] += 2;
     }
 
     // Mapa "latitude,longitude"

@@ -65,29 +65,6 @@ function vit_admin_page_html() {
         <hr>
 
         <?php
-        $test_report = get_transient( 'vit_test_report' );
-        if ( $test_report ) {
-            $test_class = match( $test_report['status'] ) {
-                'success' => 'notice-success',
-                'warning' => 'notice-warning',
-                default   => 'notice-error',
-            };
-            echo '<div class="notice ' . esc_attr( $test_class ) . ' is-dismissible">';
-            echo '<h3>Resultado do Teste de Conexão</h3>';
-            echo '<ul style="font-family: monospace; font-size: 13px; line-height: 1.8;">';
-            foreach ( $test_report['log'] as $message ) {
-                $color = '';
-                if ( strpos( $message, '[OK]' ) === 0 )    $color = 'color:#1a7a1a;font-weight:bold;';
-                if ( strpos( $message, '[FALHA]' ) === 0 ) $color = 'color:#b22222;font-weight:bold;';
-                if ( strpos( $message, '[AVISO]' ) === 0 ) $color = 'color:#c07000;font-weight:bold;';
-                if ( strpos( $message, '>>' ) === 0 )      $color = 'color:#0050b3;font-weight:bold;';
-                echo '<li style="' . esc_attr( $color ) . '">' . esc_html( $message ) . '</li>';
-            }
-            echo '</ul>';
-            echo '</div>';
-            delete_transient( 'vit_test_report' );
-        }
-
         $report = get_transient( 'vit_import_report' );
         if ( $report ) {
             $notice_class = ( $report['status'] === 'success' ) ? 'notice-success' : 'notice-error';

@@ -112,6 +112,14 @@ function vit_handle_manual_check(): void {
 
     vit_run_connection_check( $api_url ?: get_option( 'vit_api_url', '' ) );
 
+    // Renova o timer: próxima verificação automática em 1h a partir de agora
+    $hook = 'vit_hourly_connection_check';
+    $next = wp_next_scheduled( $hook );
+    if ( $next ) {
+        wp_unschedule_event( $next, $hook );
+    }
+    wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', $hook );
+
     wp_redirect( admin_url( 'admin.php?page=vista-imovel-teste' ) );
     exit;
 }

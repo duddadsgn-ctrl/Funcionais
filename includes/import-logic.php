@@ -388,27 +388,6 @@ function vit_call_api_get( $base_url, $endpoint, $api_key, $params, &$log ) {
     return vit_handle_api_response( $response, $log );
 }
 
-/**
- * POST para /imoveis/detalhes.
- */
-function vit_call_api_post( $base_url, $endpoint, $api_key, $post_fields, &$log ) {
-    $url = rtrim( $base_url, '/' ) . $endpoint;
-    $url = add_query_arg( [ 'key' => $api_key ], $url );
-
-    $log[] = 'Endpoint   : POST ' . $endpoint;
-    $log[] = 'Payload    : ' . wp_json_encode( $post_fields, JSON_UNESCAPED_UNICODE );
-
-    @ini_set( 'default_socket_timeout', 35 );
-    $response = wp_remote_post( $url, [
-        'timeout'         => 30,
-        'connect_timeout' => 15,
-        'sslverify'       => false,
-        'headers'         => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
-        'body'            => wp_json_encode( $post_fields ),
-    ] );
-    return vit_handle_api_response( $response, $log );
-}
-
 function vit_handle_api_response( $response, &$log ) {
     if ( is_wp_error( $response ) ) {
         $log[] = 'ERRO DE CONEXÃO: ' . $response->get_error_message();

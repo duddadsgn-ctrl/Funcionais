@@ -109,6 +109,33 @@ function vit_admin_page_html() {
             <?php submit_button( 'Importar 1 imóvel de teste' ); ?>
         </form>
 
+        <div id="vit-bulk">
+            <h2>Importação em Lote — Validador de Imóveis</h2>
+            <p style="color:#50575e;font-size:13px;margin-top:-6px;">
+                Cada imóvel é importado e verificado individualmente. Clique no nome
+                para ver os três checks: informações, imagens e completude. Itens
+                amarelos/vermelhos podem ser reimportados pelo botão <em>Tentar atualizar</em>.
+            </p>
+
+            <div class="vit-bulk-controls">
+                <button type="button" id="vit-start" class="button button-primary">Iniciar Importação Completa</button>
+            </div>
+
+            <div class="vit-progress">
+                <div>
+                    <strong><span id="vit-count-done">0</span> / <span id="vit-count-total">0</span></strong> imóveis
+                    <span class="vit-chip green"  title="Completos">Verde: <span id="vit-count-green">0</span></span>
+                    <span class="vit-chip yellow" title="Parciais">Amarelo: <span id="vit-count-yellow">0</span></span>
+                    <span class="vit-chip red"    title="Falhou">Vermelho: <span id="vit-count-red">0</span></span>
+                </div>
+                <div class="vit-bar"><div id="vit-bar-fill"></div></div>
+            </div>
+
+            <div id="vit-status-line" class="vit-status"></div>
+
+            <div id="vit-list"></div>
+        </div>
+
     </div>
     <?php
 }

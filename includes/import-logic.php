@@ -81,61 +81,96 @@ function vit_import_property( $api_url, $api_key ) {
         $chosen['Cidade']      ?? '-'
     );
 
-    // ============ FASE 3: buscar detalhes completos ============
+    // FASES 3–5 delegadas para vit_import_single_by_code.
+    $single = vit_import_single_by_code( $api_url, $api_key, $property_code, $categoria, $finalidade, $chosen );
+    $log = array_merge( $log, $single['log'] );
+
+    return [ 'status' => $single['status'], 'log' => $log ];
+}
+
+/**
+ * Importa um único imóvel a partir do código explícito.
+ *
+ * Usado tanto pelo botão "Importar 1 imóvel de teste" (após a FASE 1-2 de
+ * listar/escolher) quanto pelo loop da importação em lote (que já tem
+ * o código em mãos).
+ *
+ * @param string $api_url
+ * @param string $api_key
+ * @param string $code        Código do imóvel no Vista CRM.
+ * @param string $categoria   Opcional — ajuda /imoveis/detalhes.
+ * @param string $finalidade  Opcional.
+ * @param array  $base_data   Opcional — dados já obtidos em /listar para merge.
+ * @return array { status, post_id, title, log, field_counters, image_counters }
+ */
+function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', $finalidade = '', $base_data = [] ) {
+    $log = [];
+    $log[] = '================ IMPORTAÇÃO (código ' . $code . ') ================';
+    $log[] = 'Data/hora: ' . current_time( 'mysql' );
+
+    if ( empty( $api_url ) || empty( $api_key ) || empty( $code ) ) {
+        $log[] = 'ERRO: api_url, api_key e código são obrigatórios.';
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
+    }
+
+    // ============ FASE 3: detalhes ============
     $log[] = '';
     $log[] = '--- FASE 3: buscando detalhes em /imoveis/detalhes ---';
 
-    $details_response = vit_call_detalhes( $api_url, $api_key, $property_code, $categoria, $finalidade, $log );
-
+    $details_response = vit_call_detalhes( $api_url, $api_key, $code, $categoria, $finalidade, $log );
     if ( is_wp_error( $details_response ) ) {
-        $log[] = 'ERRO FINAL (detalhes): ' . $details_response->get_error_message();
-        $log[] = 'Usando apenas dados da listagem para importação parcial...';
+        $log[] = 'ERRO (detalhes): ' . $details_response->get_error_message();
+        $log[] = 'Usando apenas dados base para importação parcial...';
         $details_response = [];
     }
 
-    // ============ MERGE listar + detalhes ============
-    // Base: dados do candidato da listagem (já tem TituloSite, Categoria, Status, Cidade, etc.)
-    // Por cima: campos do detalhes, mas só quando não vazio
+    // ============ MERGE base (listagem) + detalhes ============
     $log[] = '';
-    $log[] = '--- MERGE: dados da listagem + detalhes ---';
-    $log[] = 'Dados da listagem (' . count( $chosen ) . ' campos): ' . implode( ', ', array_keys( $chosen ) );
-    $log[] = 'Dados do detalhe (' . count( $details_response ) . ' campos): ' . implode( ', ', array_keys( $details_response ) );
-
-    $property_data = $chosen; // Base: dados da listagem
-    $field_origins = [];
-
-    // Registra origem dos campos da listagem
-    foreach ( $chosen as $k => $v ) {
-        $field_origins[ $k ] = ( $v !== '' && $v !== null ) ? 'listar' : 'vazio';
+    $log[] = '--- MERGE: base + detalhes ---';
+    if ( ! is_array( $base_data ) ) {
+        $base_data = [];
+    }
+    if ( empty( $base_data['Codigo'] ) ) {
+        $base_data['Codigo'] = $code;
+    }
+    if ( empty( $base_data['Categoria'] ) && $categoria !== '' ) {
+        $base_data['Categoria'] = $categoria;
+    }
+    if ( empty( $base_data['Finalidade'] ) && $finalidade !== '' ) {
+        $base_data['Finalidade'] = $finalidade;
     }
 
-    // Merge com detalhes: detalhe vence apenas quando não for vazio
-    foreach ( $details_response as $k => $v ) {
+    $property_data = $base_data;
+    $field_origins = [];
+    foreach ( $base_data as $k => $v ) {
+        $field_origins[ $k ] = ( $v !== '' && $v !== null ) ? 'listar' : 'vazio';
+    }
+    foreach ( (array) $details_response as $k => $v ) {
         $detail_has_value = ( $v !== '' && $v !== null && ! ( is_array( $v ) && empty( $v ) ) );
         if ( $detail_has_value ) {
-            $property_data[ $k ]  = $v;
-            $field_origins[ $k ]  = 'detalhes';
+            $property_data[ $k ] = $v;
+            $field_origins[ $k ] = 'detalhes';
         } elseif ( ! isset( $property_data[ $k ] ) ) {
-            $property_data[ $k ]  = $v;
-            $field_origins[ $k ]  = 'vazio';
+            $property_data[ $k ] = $v;
+            $field_origins[ $k ] = 'vazio';
         }
     }
 
     if ( empty( $property_data['Codigo'] ) ) {
-        $log[] = "ERRO: nenhum código de imóvel disponível após merge.";
-        return [ 'status' => 'error', 'log' => $log ];
+        $log[] = 'ERRO: nenhum código após merge.';
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
     }
 
-    $log[] = "Campos após merge: " . count( $property_data ) . " | Código: " . $property_data['Codigo'];
+    $log[] = 'Campos após merge: ' . count( $property_data ) . ' | Código: ' . $property_data['Codigo'];
 
-    // ============ FASE 4: criar/atualizar post e salvar campos ============
+    // ============ FASE 4: post + metas ============
     $log[] = '';
-    $log[] = '--- FASE 4: criando/atualizando post no WordPress ---';
+    $log[] = '--- FASE 4: criando/atualizando post ---';
 
     $post_id = vit_get_or_create_property_post( $property_data['Codigo'], $log );
     if ( ! $post_id ) {
         $log[] = 'ERRO: falha ao criar/localizar o post.';
-        return [ 'status' => 'error', 'log' => $log ];
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
     }
 
     $field_counters = [ 'saved' => 0, 'empty' => 0 ];
@@ -147,42 +182,28 @@ function vit_import_property( $api_url, $api_key ) {
     $image_counters = [ 'found' => 0, 'imported' => 0, 'failed' => 0, 'thumbnail_set' => false, 'thumbnail_id' => 0 ];
     vit_process_property_images( $post_id, $property_data, $log, $image_counters );
 
-    // ============ RESUMO FINAL ============
+    // ============ RESUMO ============
     $log[] = '';
-    $log[] = '========== RELATÓRIO FINAL ==========';
+    $log[] = '========== RESUMO ==========';
     $log[] = 'ID do Post WordPress : ' . $post_id;
     $log[] = 'Código do Imóvel     : ' . $property_data['Codigo'];
     $log[] = 'Título               : ' . get_the_title( $post_id );
-    $log[] = 'Categoria (CRM)      : ' . ( $property_data['Categoria']   ?? '-' );
-    $log[] = 'Finalidade (CRM)     : ' . ( $property_data['Finalidade']  ?? '-' );
-    $log[] = 'Status (CRM)         : ' . ( $property_data['Status']      ?? '-' );
-    $log[] = '';
-    $log[] = 'Campos salvos        : ' . $field_counters['saved'];
-    $log[] = 'Campos vazios        : ' . $field_counters['empty'];
-    $log[] = '';
-    $log[] = 'Campos de Valor:';
-    $price_summary = Vista_Price_Formatter::build_price_fields( $property_data );
-    foreach ( [
-        'valor_venda'      => 'Venda     ',
-        'valor_locacao'    => 'Locação   ',
-        'valor_iptu'       => 'IPTU      ',
-        'valor_condominio' => 'Condomínio',
-    ] as $pk => $label ) {
-        $raw = $price_summary[ $pk ]                ?? '';
-        $fmt = $price_summary[ $pk . '_formatado' ] ?? '';
-        $log[] = '  ' . $label . ' : ' . ( $raw !== '' ? $raw . '  →  ' . $fmt : '-' );
-    }
-    $log[] = '';
+    $log[] = 'Campos salvos / vazios: ' . $field_counters['saved'] . ' / ' . $field_counters['empty'];
     $log[] = 'Imagens encontradas  : ' . $image_counters['found'];
     $log[] = 'Imagens importadas   : ' . $image_counters['imported'];
     $log[] = 'Imagens falhadas     : ' . $image_counters['failed'];
     $log[] = 'Thumbnail definida   : ' . ( $image_counters['thumbnail_set'] ? ( 'SIM (ID: ' . $image_counters['thumbnail_id'] . ')' ) : 'NÃO' );
-    $log[] = '';
     $log[] = 'Link para editar     : ' . get_edit_post_link( $post_id, 'raw' );
-    $log[] = '=====================================';
-    $log[] = 'Importação concluída com sucesso!';
+    $log[] = '============================';
 
-    return [ 'status' => 'success', 'log' => $log ];
+    return [
+        'status'         => 'success',
+        'post_id'        => $post_id,
+        'title'          => get_the_title( $post_id ),
+        'log'            => $log,
+        'field_counters' => $field_counters,
+        'image_counters' => $image_counters,
+    ];
 }
 
 /**

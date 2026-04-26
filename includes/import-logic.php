@@ -81,61 +81,96 @@ function vit_import_property( $api_url, $api_key ) {
         $chosen['Cidade']      ?? '-'
     );
 
-    // ============ FASE 3: buscar detalhes completos ============
+    // FASES 3–5 delegadas para vit_import_single_by_code.
+    $single = vit_import_single_by_code( $api_url, $api_key, $property_code, $categoria, $finalidade, $chosen );
+    $log = array_merge( $log, $single['log'] );
+
+    return [ 'status' => $single['status'], 'log' => $log ];
+}
+
+/**
+ * Importa um único imóvel a partir do código explícito.
+ *
+ * Usado tanto pelo botão "Importar 1 imóvel de teste" (após a FASE 1-2 de
+ * listar/escolher) quanto pelo loop da importação em lote (que já tem
+ * o código em mãos).
+ *
+ * @param string $api_url
+ * @param string $api_key
+ * @param string $code        Código do imóvel no Vista CRM.
+ * @param string $categoria   Opcional — ajuda /imoveis/detalhes.
+ * @param string $finalidade  Opcional.
+ * @param array  $base_data   Opcional — dados já obtidos em /listar para merge.
+ * @return array { status, post_id, title, log, field_counters, image_counters }
+ */
+function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', $finalidade = '', $base_data = [] ) {
+    $log = [];
+    $log[] = '================ IMPORTAÇÃO (código ' . $code . ') ================';
+    $log[] = 'Data/hora: ' . current_time( 'mysql' );
+
+    if ( empty( $api_url ) || empty( $api_key ) || empty( $code ) ) {
+        $log[] = 'ERRO: api_url, api_key e código são obrigatórios.';
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
+    }
+
+    // ============ FASE 3: detalhes ============
     $log[] = '';
     $log[] = '--- FASE 3: buscando detalhes em /imoveis/detalhes ---';
 
-    $details_response = vit_call_detalhes( $api_url, $api_key, $property_code, $categoria, $finalidade, $log );
-
+    $details_response = vit_call_detalhes( $api_url, $api_key, $code, $categoria, $finalidade, $log );
     if ( is_wp_error( $details_response ) ) {
-        $log[] = 'ERRO FINAL (detalhes): ' . $details_response->get_error_message();
-        $log[] = 'Usando apenas dados da listagem para importação parcial...';
+        $log[] = 'ERRO (detalhes): ' . $details_response->get_error_message();
+        $log[] = 'Usando apenas dados base para importação parcial...';
         $details_response = [];
     }
 
-    // ============ MERGE listar + detalhes ============
-    // Base: dados do candidato da listagem (já tem TituloSite, Categoria, Status, Cidade, etc.)
-    // Por cima: campos do detalhes, mas só quando não vazio
+    // ============ MERGE base (listagem) + detalhes ============
     $log[] = '';
-    $log[] = '--- MERGE: dados da listagem + detalhes ---';
-    $log[] = 'Dados da listagem (' . count( $chosen ) . ' campos): ' . implode( ', ', array_keys( $chosen ) );
-    $log[] = 'Dados do detalhe (' . count( $details_response ) . ' campos): ' . implode( ', ', array_keys( $details_response ) );
-
-    $property_data = $chosen; // Base: dados da listagem
-    $field_origins = [];
-
-    // Registra origem dos campos da listagem
-    foreach ( $chosen as $k => $v ) {
-        $field_origins[ $k ] = ( $v !== '' && $v !== null ) ? 'listar' : 'vazio';
+    $log[] = '--- MERGE: base + detalhes ---';
+    if ( ! is_array( $base_data ) ) {
+        $base_data = [];
+    }
+    if ( empty( $base_data['Codigo'] ) ) {
+        $base_data['Codigo'] = $code;
+    }
+    if ( empty( $base_data['Categoria'] ) && $categoria !== '' ) {
+        $base_data['Categoria'] = $categoria;
+    }
+    if ( empty( $base_data['Finalidade'] ) && $finalidade !== '' ) {
+        $base_data['Finalidade'] = $finalidade;
     }
 
-    // Merge com detalhes: detalhe vence apenas quando não for vazio
-    foreach ( $details_response as $k => $v ) {
+    $property_data = $base_data;
+    $field_origins = [];
+    foreach ( $base_data as $k => $v ) {
+        $field_origins[ $k ] = ( $v !== '' && $v !== null ) ? 'listar' : 'vazio';
+    }
+    foreach ( (array) $details_response as $k => $v ) {
         $detail_has_value = ( $v !== '' && $v !== null && ! ( is_array( $v ) && empty( $v ) ) );
         if ( $detail_has_value ) {
-            $property_data[ $k ]  = $v;
-            $field_origins[ $k ]  = 'detalhes';
+            $property_data[ $k ] = $v;
+            $field_origins[ $k ] = 'detalhes';
         } elseif ( ! isset( $property_data[ $k ] ) ) {
-            $property_data[ $k ]  = $v;
-            $field_origins[ $k ]  = 'vazio';
+            $property_data[ $k ] = $v;
+            $field_origins[ $k ] = 'vazio';
         }
     }
 
     if ( empty( $property_data['Codigo'] ) ) {
-        $log[] = "ERRO: nenhum código de imóvel disponível após merge.";
-        return [ 'status' => 'error', 'log' => $log ];
+        $log[] = 'ERRO: nenhum código após merge.';
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
     }
 
-    $log[] = "Campos após merge: " . count( $property_data ) . " | Código: " . $property_data['Codigo'];
+    $log[] = 'Campos após merge: ' . count( $property_data ) . ' | Código: ' . $property_data['Codigo'];
 
-    // ============ FASE 4: criar/atualizar post e salvar campos ============
+    // ============ FASE 4: post + metas ============
     $log[] = '';
-    $log[] = '--- FASE 4: criando/atualizando post no WordPress ---';
+    $log[] = '--- FASE 4: criando/atualizando post ---';
 
     $post_id = vit_get_or_create_property_post( $property_data['Codigo'], $log );
     if ( ! $post_id ) {
         $log[] = 'ERRO: falha ao criar/localizar o post.';
-        return [ 'status' => 'error', 'log' => $log ];
+        return [ 'status' => 'error', 'post_id' => 0, 'title' => '', 'log' => $log ];
     }
 
     $field_counters = [ 'saved' => 0, 'empty' => 0 ];
@@ -147,29 +182,28 @@ function vit_import_property( $api_url, $api_key ) {
     $image_counters = [ 'found' => 0, 'imported' => 0, 'failed' => 0, 'thumbnail_set' => false, 'thumbnail_id' => 0 ];
     vit_process_property_images( $post_id, $property_data, $log, $image_counters );
 
-    // ============ RESUMO FINAL ============
+    // ============ RESUMO ============
     $log[] = '';
-    $log[] = '========== RELATÓRIO FINAL ==========';
+    $log[] = '========== RESUMO ==========';
     $log[] = 'ID do Post WordPress : ' . $post_id;
     $log[] = 'Código do Imóvel     : ' . $property_data['Codigo'];
     $log[] = 'Título               : ' . get_the_title( $post_id );
-    $log[] = 'Categoria (CRM)      : ' . ( $property_data['Categoria']   ?? '-' );
-    $log[] = 'Finalidade (CRM)     : ' . ( $property_data['Finalidade']  ?? '-' );
-    $log[] = 'Status (CRM)         : ' . ( $property_data['Status']      ?? '-' );
-    $log[] = '';
-    $log[] = 'Campos salvos        : ' . $field_counters['saved'];
-    $log[] = 'Campos vazios        : ' . $field_counters['empty'];
-    $log[] = '';
+    $log[] = 'Campos salvos / vazios: ' . $field_counters['saved'] . ' / ' . $field_counters['empty'];
     $log[] = 'Imagens encontradas  : ' . $image_counters['found'];
     $log[] = 'Imagens importadas   : ' . $image_counters['imported'];
     $log[] = 'Imagens falhadas     : ' . $image_counters['failed'];
     $log[] = 'Thumbnail definida   : ' . ( $image_counters['thumbnail_set'] ? ( 'SIM (ID: ' . $image_counters['thumbnail_id'] . ')' ) : 'NÃO' );
-    $log[] = '';
     $log[] = 'Link para editar     : ' . get_edit_post_link( $post_id, 'raw' );
-    $log[] = '=====================================';
-    $log[] = 'Importação concluída com sucesso!';
+    $log[] = '============================';
 
-    return [ 'status' => 'success', 'log' => $log ];
+    return [
+        'status'         => 'success',
+        'post_id'        => $post_id,
+        'title'          => get_the_title( $post_id ),
+        'log'            => $log,
+        'field_counters' => $field_counters,
+        'image_counters' => $image_counters,
+    ];
 }
 
 /**
@@ -204,16 +238,35 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
     if ( ! empty( $categoria ) )  $cat_arr['Categoria']  = $categoria;
     if ( ! empty( $finalidade ) ) $cat_arr['Finalidade'] = $finalidade;
 
-    // Campos de texto — sem Foto (não é campo válido como string neste endpoint)
+    // Campos de texto — lista abrangente para capturar absolutamente tudo.
+    // Usar [] (sem filtro) como segundo fallback garante que campos novos no CRM
+    // nunca sejam perdidos.
     $text_fields = [
-        'Codigo','CodigoCorretor','TituloSite','DescricaoWeb',
-        'Bairro','BairroComercial','Cidade','UF','Latitude','Longitude',
-        'Status','Finalidade','Categoria','Moeda','Exclusivo',
-        'Dormitorios','Suites','BanheiroSocialQtd','Vagas',
-        'AreaTotal','AreaPrivativa',
-        'ValorVenda','ValorLocacao','ValorIptu','ValorCondominio',
-        'Caracteristicas','InfraEstrutura','Imediacoes',
-        'DestaqueWeb','Lancamento','FotoDestaque','FotoDestaquePequena','ExibirNoSite',
+        // Identificação
+        'Codigo', 'CodigoCorretor', 'CodigoCliente',
+        // Título e descrição
+        'TituloSite', 'Titulo', 'DescricaoWeb', 'Descricao', 'Observacao',
+        // Localização
+        'Bairro', 'BairroComercial', 'Cidade', 'CidadeComercial', 'UF',
+        'CEP', 'Endereco', 'Numero', 'Complemento', 'Latitude', 'Longitude',
+        // Classificação
+        'Status', 'Finalidade', 'Categoria', 'Subcategoria', 'Moeda',
+        'Exclusivo', 'Lancamento', 'ExibirNoSite', 'DestaqueWeb', 'SuperDestaque',
+        // Cômodos e áreas
+        'Dormitorios', 'Suites', 'BanheiroSocialQtd', 'BanheiroSocialDesc',
+        'Vagas', 'SalaStarQtd', 'Closet', 'Hidromassagem', 'Living',
+        'AreaTotal', 'AreaPrivativa', 'AreaUtil', 'AreaTerreno',
+        'Frente', 'Fundo', 'LadoDireito', 'LadoEsquerdo',
+        // Acabamento de piso (por área)
+        'AcabamentoAreaSocial', 'AcabamentoDormitorios',
+        'AcabamentoAreaIntima', 'AcabamentoSalas',
+        // Valores
+        'ValorVenda', 'ValorVendaNegociavel', 'ValorLocacao',
+        'ValorIptu', 'ValorCondominio', 'ValorSeguroIncendio',
+        // Fotos de destaque (URLs)
+        'FotoDestaque', 'FotoDestaquePequena',
+        // Arrays (Sim/Não ou texto livre)
+        'Caracteristicas', 'InfraEstrutura', 'Imediacoes',
     ];
 
     // ---- Chamada 1: campos de texto ----
@@ -316,9 +369,12 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
  * GET helper simples — retorna array decodificado ou WP_Error.
  */
 function vit_raw_get( $url, &$log ) {
+    @ini_set( 'default_socket_timeout', 35 );
     $raw = wp_remote_get( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Accept' => 'application/json' ],
+        'timeout'         => 30,
+        'connect_timeout' => 15,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
     ] );
 
     if ( is_wp_error( $raw ) ) {
@@ -362,27 +418,12 @@ function vit_call_api_get( $base_url, $endpoint, $api_key, $params, &$log ) {
     $log[] = 'Endpoint   : GET ' . $endpoint;
     $log[] = 'Pesquisa   : ' . wp_json_encode( $params, JSON_UNESCAPED_UNICODE );
 
+    @ini_set( 'default_socket_timeout', 35 );
     $response = wp_remote_get( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Accept' => 'application/json' ],
-    ] );
-    return vit_handle_api_response( $response, $log );
-}
-
-/**
- * POST para /imoveis/detalhes.
- */
-function vit_call_api_post( $base_url, $endpoint, $api_key, $post_fields, &$log ) {
-    $url = rtrim( $base_url, '/' ) . $endpoint;
-    $url = add_query_arg( [ 'key' => $api_key ], $url );
-
-    $log[] = 'Endpoint   : POST ' . $endpoint;
-    $log[] = 'Payload    : ' . wp_json_encode( $post_fields, JSON_UNESCAPED_UNICODE );
-
-    $response = wp_remote_post( $url, [
-        'timeout' => 30,
-        'headers' => [ 'Content-Type' => 'application/json', 'Accept' => 'application/json' ],
-        'body'    => wp_json_encode( $post_fields ),
+        'timeout'         => 30,
+        'connect_timeout' => 15,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
     ] );
     return vit_handle_api_response( $response, $log );
 }
@@ -464,30 +505,69 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     ] );
     $log[] = "[TÍTULO] definido como: \"{$title}\"";
 
-    // Mapa: meta_key WP => nome do campo na API Vista
+    // Mapa completo: meta_key WP => nome do campo na API Vista.
+    // Cobre absolutamente todos os campos escalares conhecidos do Vista CRM.
     $map = [
-        '_vista_codigo'   => 'Codigo',
-        'codigo'          => 'Codigo',
-        'codigo_corretor' => 'CodigoCorretor',
-        'bairro'          => 'Bairro',
-        'cidade'          => 'Cidade',
-        'uf'              => 'UF',
-        'latitude'        => 'Latitude',
-        'longitude'       => 'Longitude',
-        'status'          => 'Status',
-        'finalidade'      => 'Finalidade',
-        'categoria'       => 'Categoria',
-        'moeda'           => 'Moeda',
-        'dormitorios'     => 'Dormitorios',
-        'suites'          => 'Suites',
-        'banheiros'       => 'BanheiroSocialQtd',
-        'vagas'           => 'Vagas',
-        'area_total'      => 'AreaTotal',
-        'area_privativa'  => 'AreaPrivativa',
-        'valor_venda'     => 'ValorVenda',
-        'valor_locacao'   => 'ValorLocacao',
-        'valor_iptu'      => 'ValorIptu',
-        'valor_condominio' => 'ValorCondominio',
+        // Identificação
+        '_vista_codigo'        => 'Codigo',
+        'codigo'               => 'Codigo',
+        'codigo_corretor'      => 'CodigoCorretor',
+        'codigo_cliente'       => 'CodigoCliente',
+        // Textos
+        'titulo_site'          => 'TituloSite',
+        'descricao_web'        => 'DescricaoWeb',
+        'observacao'           => 'Observacao',
+        // Localização
+        'bairro'               => 'Bairro',
+        'bairro_comercial'     => 'BairroComercial',
+        'cidade'               => 'Cidade',
+        'cidade_comercial'     => 'CidadeComercial',
+        'uf'                   => 'UF',
+        'cep'                  => 'CEP',
+        'endereco'             => 'Endereco',
+        'numero'               => 'Numero',
+        'complemento'          => 'Complemento',
+        'latitude'             => 'Latitude',
+        'longitude'            => 'Longitude',
+        // Classificação
+        'status'               => 'Status',
+        'finalidade'           => 'Finalidade',
+        'categoria'            => 'Categoria',
+        'subcategoria'         => 'Subcategoria',
+        'moeda'                => 'Moeda',
+        'exclusivo'            => 'Exclusivo',
+        'lancamento'           => 'Lancamento',
+        'exibir_no_site'       => 'ExibirNoSite',
+        'destaque_web'         => 'DestaqueWeb',
+        'super_destaque'       => 'SuperDestaque',
+        // Cômodos e áreas
+        'dormitorios'          => 'Dormitorios',
+        'suites'               => 'Suites',
+        'banheiros'            => 'BanheiroSocialQtd',
+        'banheiro_desc'        => 'BanheiroSocialDesc',
+        'vagas'                => 'Vagas',
+        'sala_star_qtd'        => 'SalaStarQtd',
+        'closet'               => 'Closet',
+        'hidromassagem'        => 'Hidromassagem',
+        'living'               => 'Living',
+        'area_total'           => 'AreaTotal',
+        'area_privativa'       => 'AreaPrivativa',
+        'area_util'            => 'AreaUtil',
+        'area_terreno'         => 'AreaTerreno',
+        'frente'               => 'Frente',
+        'fundo'                => 'Fundo',
+        'lado_direito'         => 'LadoDireito',
+        'lado_esquerdo'        => 'LadoEsquerdo',
+        // Acabamento de piso (por área)
+        'acabamento_social'    => 'AcabamentoAreaSocial',
+        'acabamento_dorms'     => 'AcabamentoDormitorios',
+        'acabamento_intimo'    => 'AcabamentoAreaIntima',
+        'acabamento_salas'     => 'AcabamentoSalas',
+        // Fotos de destaque
+        'foto_destaque'        => 'FotoDestaque',
+        'foto_destaque_peq'    => 'FotoDestaquePequena',
+        // Valores brutos (monetários são processados em bloco separado)
+        'valor_seguro'         => 'ValorSeguroIncendio',
     ];
 
     foreach ( $map as $meta_key => $api_key ) {
@@ -507,6 +587,36 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         $counters['saved']++;
     }
 
+    // Campos monetários — bruto + formatado logados em par por campo
+    $price_fields   = Vista_Price_Formatter::build_price_fields( $data );
+    $price_api_map  = [
+        'ValorVenda'      => 'valor_venda',
+        'ValorLocacao'    => 'valor_locacao',
+        'ValorIptu'       => 'valor_iptu',
+        'ValorCondominio' => 'valor_condominio',
+    ];
+    foreach ( $price_api_map as $api_key => $wp_key ) {
+        $raw = $price_fields[ $wp_key ]                ?? '';
+        $fmt = $price_fields[ $wp_key . '_formatado' ] ?? '';
+
+        if ( $raw === '' ) {
+            $log[] = sprintf(
+                "[PREÇO] API:'%s' → WP:'%s' = \"\" | WP:'%s_formatado' = \"\" | - VAZIO (ignorado)",
+                $api_key, $wp_key, $wp_key
+            );
+            $counters['empty'] += 2;
+            continue;
+        }
+
+        update_post_meta( $post_id, $wp_key, $raw );
+        update_post_meta( $post_id, $wp_key . '_formatado', $fmt );
+        $log[] = sprintf(
+            "[PREÇO] API:'%s' → WP:'%s' = \"%s\" | WP:'%s_formatado' = \"%s\" | OK SALVO",
+            $api_key, $wp_key, $raw, $wp_key, $fmt
+        );
+        $counters['saved'] += 2;
+    }
+
     // Mapa "latitude,longitude"
     if ( ! empty( $data['Latitude'] ) && ! empty( $data['Longitude'] ) ) {
         $mapa_val = $data['Latitude'] . ',' . $data['Longitude'];
@@ -519,6 +629,7 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     }
 
     // Características, Infraestrutura, Imediações
+    // Imediacoes pode ser string de texto livre OU array de Sim/Não.
     $feature_map = [
         'caracteristicas' => 'Caracteristicas',
         'infraestrutura'  => 'InfraEstrutura',
@@ -526,25 +637,50 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     ];
     foreach ( $feature_map as $meta_key => $api_key ) {
         $group = $data[ $api_key ] ?? null;
+
+        // String de texto livre (ex: "Próximo ao metrô, shopping, escolas")
+        if ( is_string( $group ) && trim( $group ) !== '' ) {
+            update_post_meta( $post_id, $meta_key, sanitize_textarea_field( $group ) );
+            $log[] = "[FEATURE] '{$api_key}' → texto livre salvo: \"" . mb_substr( $group, 0, 60 ) . "...\"";
+            $counters['saved']++;
+            continue;
+        }
+
         if ( empty( $group ) || ! is_array( $group ) ) {
-            $log[] = "[CARACTERISTICAS] '{$api_key}': vazio/ignorado.";
+            $log[] = "[FEATURE] '{$api_key}': vazio/ignorado.";
             $counters['empty']++;
             continue;
         }
+
+        // Array associativo {Nome: "Sim"/"Não"}
         $positive = array_keys( $group, 'Sim' );
         $total    = count( $group );
         $pos      = count( $positive );
-        $ignored  = $total - $pos;
 
-        $log[] = sprintf( "[CARACTERISTICAS] '%s' -> Total: %d | Positivos (Sim): %d | Ignorados: %d", $api_key, $total, $pos, $ignored );
+        $log[] = sprintf( "[FEATURE] '%s' → %d itens | %d marcados Sim", $api_key, $total, $pos );
         if ( $pos > 0 ) {
-            $log[] = sprintf( "[CARACTERISTICAS] '%s' positivos: %s", $api_key, implode( ', ', $positive ) );
+            $log[] = "[FEATURE] '{$api_key}' positivos: " . implode( ', ', $positive );
             update_post_meta( $post_id, $meta_key, implode( ', ', $positive ) );
             update_post_meta( $post_id, "_{$meta_key}_raw", $group );
             $counters['saved']++;
         } else {
             $counters['empty']++;
         }
+    }
+
+    // Catch-all: salva qualquer campo escalar que veio da API mas não está
+    // no $map acima, evitando perder dados de campos futuros do CRM.
+    $already_mapped = array_flip( array_values( $map ) );
+    $skip_keys = [ 'Foto', 'Fotos', 'Imagens', 'Caracteristicas', 'InfraEstrutura', 'Imediacoes',
+                   'TituloSite', 'Titulo', 'DescricaoWeb', 'Descricao' ];
+    foreach ( $data as $api_key => $value ) {
+        if ( isset( $already_mapped[ $api_key ] ) ) continue;
+        if ( in_array( $api_key, $skip_keys, true ) ) continue;
+        if ( ! is_scalar( $value ) || $value === '' || $value === null ) continue;
+        $meta_key = '_vista_' . strtolower( preg_replace( '/[^a-zA-Z0-9]/', '_', $api_key ) );
+        update_post_meta( $post_id, $meta_key, sanitize_text_field( (string) $value ) );
+        $log[] = "[EXTRA] API:'{$api_key}' → WP:'{$meta_key}' = \"{$value}\" | OK SALVO";
+        $counters['saved']++;
     }
 }
 
@@ -704,4 +840,173 @@ function vit_sideload_image( $file_url, $post_id, $desc ) {
         return $id;
     }
     return (int) $id;
+}
+
+/**
+ * Testa a conectividade com o servidor da API passo a passo.
+ * Retorna array com log detalhado de cada etapa.
+ */
+function vit_test_connection( $api_url, $api_key ) {
+    $log    = [];
+    $log[]  = '================ TESTE DE CONEXÃO ================';
+    $log[]  = 'Data/hora : ' . current_time( 'mysql' );
+    $log[]  = 'API URL   : ' . $api_url;
+    $log[]  = '';
+
+    $parsed = wp_parse_url( $api_url );
+    $host   = $parsed['host'] ?? '';
+    $scheme = $parsed['scheme'] ?? 'https';
+    $port   = $parsed['port'] ?? ( $scheme === 'https' ? 443 : 80 );
+
+    if ( empty( $host ) ) {
+        $log[] = '[ERRO] URL inválida — não foi possível extrair o host.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+
+    // --- Etapa 1: Resolução DNS ---
+    $log[] = '--- Etapa 1: Resolução DNS ---';
+    $ip = gethostbyname( $host );
+    if ( $ip === $host ) {
+        $log[] = '[FALHA] DNS: não foi possível resolver "' . $host . '" em um endereço IP.';
+        $log[] = '        Causa provável: problema de DNS no servidor WordPress ou hostname incorreto.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    $log[] = '[OK] DNS: "' . $host . '" resolvido para ' . $ip;
+
+    // --- Etapa 2: Conexão TCP ---
+    $log[]  = '';
+    $log[]  = '--- Etapa 2: Conexão TCP na porta ' . $port . ' ---';
+    $errno  = 0;
+    $errstr = '';
+    $sock   = @fsockopen( ( $scheme === 'https' ? 'ssl://' : '' ) . $host, $port, $errno, $errstr, 10 );
+    if ( ! $sock ) {
+        $log[] = '[FALHA] TCP: não conseguiu conectar em ' . $host . ':' . $port;
+        $log[] = '        Erro: ' . $errstr . ' (código ' . $errno . ')';
+        $log[] = '        Causa provável: servidor externo fora do ar, ou firewall bloqueando saída na porta ' . $port . '.';
+
+        // --- Etapa 2b: Tentativas alternativas ---
+        $log[] = '';
+        $log[] = '--- Etapa 2b: Tentativas alternativas de conexão ---';
+
+        $alternatives = [
+            [ 'label' => 'HTTP porta 80',         'prefix' => '',       'sock_host' => $host, 'port' => 80,   'scheme' => 'http',  'url_host' => $host ],
+            [ 'label' => 'IP direto porta 443',   'prefix' => 'ssl://', 'sock_host' => $ip,   'port' => 443,  'scheme' => 'https', 'url_host' => $ip   ],
+            [ 'label' => 'IP direto porta 80',    'prefix' => '',       'sock_host' => $ip,   'port' => 80,   'scheme' => 'http',  'url_host' => $ip   ],
+            [ 'label' => 'Porta 8443 (SSL alt)',  'prefix' => 'ssl://', 'sock_host' => $host, 'port' => 8443, 'scheme' => 'https', 'url_host' => $host ],
+            [ 'label' => 'Porta 8080 (HTTP alt)', 'prefix' => '',       'sock_host' => $host, 'port' => 8080, 'scheme' => 'http',  'url_host' => $host ],
+        ];
+
+        $working_urls = [];
+        foreach ( $alternatives as $alt ) {
+            $ae = 0; $as = '';
+            $s  = @fsockopen( $alt['prefix'] . $alt['sock_host'], $alt['port'], $ae, $as, 8 );
+            if ( $s ) {
+                fclose( $s );
+                $url = $alt['scheme'] . '://' . $alt['url_host'];
+                if ( ! in_array( $alt['port'], [ 80, 443 ], true ) ) {
+                    $url .= ':' . $alt['port'];
+                }
+                $log[]          = '[OK] ' . $alt['label'] . ': conectou! → Use esta URL: ' . $url;
+                $working_urls[] = $url;
+            } else {
+                $log[] = '[FALHA] ' . $alt['label'] . ': ' . $as . ' (código ' . $ae . ')';
+            }
+        }
+
+        $log[] = '';
+        if ( ! empty( $working_urls ) ) {
+            $log[] = '>> Alternativa(s) encontrada(s). Atualize o campo "API URL" com uma das URLs acima e tente importar novamente.';
+            return [ 'status' => 'warning', 'log' => $log ];
+        }
+
+        $log[] = '>> Nenhuma alternativa funcionou. Contate sua hospedagem para liberar saída na porta 443.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    fclose( $sock );
+    $log[] = '[OK] TCP: conexão estabelecida com ' . $host . ':' . $port;
+
+    // --- Etapa 3: Requisição HTTPS ---
+    $log[] = '';
+    $log[] = '--- Etapa 3: Requisição HTTPS (GET /) ---';
+    @ini_set( 'default_socket_timeout', 35 );
+    $resp = wp_remote_get( rtrim( $api_url, '/' ) . '/', [
+        'timeout'         => 15,
+        'connect_timeout' => 10,
+        'sslverify'       => false,
+        'headers'         => [ 'Accept' => 'application/json' ],
+    ] );
+    if ( is_wp_error( $resp ) ) {
+        $log[] = '[FALHA] HTTPS: ' . $resp->get_error_message();
+        $log[] = '        Causa provável: problema de certificado SSL ou servidor recusando a requisição.';
+        return [ 'status' => 'error', 'log' => $log ];
+    }
+    $http = wp_remote_retrieve_response_code( $resp );
+    $log[] = '[OK] HTTPS: servidor respondeu com HTTP ' . $http;
+
+    // --- Etapa 4: Teste de autenticação (listar com key) ---
+    if ( ! empty( $api_key ) ) {
+        $log[] = '';
+        $log[] = '--- Etapa 4: Teste de autenticação com API Key ---';
+        $test_url = add_query_arg( [
+            'key'      => $api_key,
+            'pesquisa' => wp_json_encode( [ 'fields' => [ 'Codigo' ], 'paginacao' => [ 'pagina' => 1, 'quantidade' => 1 ] ] ),
+        ], rtrim( $api_url, '/' ) . '/imoveis/listar' );
+
+        @ini_set( 'default_socket_timeout', 35 );
+        $auth_resp = wp_remote_get( $test_url, [
+            'timeout'         => 20,
+            'connect_timeout' => 10,
+            'sslverify'       => false,
+            'headers'         => [ 'Accept' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $auth_resp ) ) {
+            $log[] = '[FALHA] Auth: ' . $auth_resp->get_error_message();
+            return [ 'status' => 'error', 'log' => $log ];
+        }
+        $auth_http = wp_remote_retrieve_response_code( $auth_resp );
+        $auth_body = wp_remote_retrieve_body( $auth_resp );
+        $auth_dec  = json_decode( $auth_body, true );
+
+        if ( $auth_http === 200 ) {
+            $count = is_array( $auth_dec ) ? count( array_filter( array_keys( $auth_dec ), 'is_numeric' ) ) : '?';
+            $log[] = '[OK] Auth: HTTP 200 — API Key válida. Registros retornados: ' . $count;
+        } elseif ( $auth_http === 401 || $auth_http === 403 ) {
+            $log[] = '[FALHA] Auth: HTTP ' . $auth_http . ' — API Key inválida ou sem permissão.';
+            return [ 'status' => 'error', 'log' => $log ];
+        } else {
+            $msg = ( is_array( $auth_dec ) && isset( $auth_dec['message'] ) ) ? $auth_dec['message'] : substr( $auth_body, 0, 200 );
+            $log[] = '[AVISO] Auth: HTTP ' . $auth_http . ' — ' . $msg;
+        }
+    }
+
+    $log[] = '';
+    $log[] = '================== RESULTADO ==================';
+    $log[] = 'Conexão com "' . $host . '" está OK!';
+    $log[] = 'Se a importação ainda falhar, verifique a API Key e os parâmetros de busca.';
+
+    return [ 'status' => 'success', 'log' => $log ];
+}
+
+/**
+ * Handler do botão "Testar Conexão".
+ */
+function vit_handle_test_connection() {
+    if ( ! isset( $_POST['vit_test_nonce_field'] ) || ! wp_verify_nonce( $_POST['vit_test_nonce_field'], 'vit_test_nonce_action' ) ) {
+        wp_die( 'Falha na verificação de segurança (nonce).' );
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'Você não tem permissão para executar esta ação.' );
+    }
+
+    $api_url = esc_url_raw( $_POST['vit_api_url'] ?? '' );
+    $api_key = sanitize_text_field( $_POST['vit_api_key'] ?? '' );
+
+    update_option( 'vit_api_url', $api_url );
+    update_option( 'vit_api_key', $api_key );
+
+    $result = vit_test_connection( $api_url, $api_key );
+    set_transient( 'vit_test_report', $result, 120 );
+    wp_redirect( admin_url( 'admin.php?page=vista-imovel-teste' ) );
+    exit;
 }

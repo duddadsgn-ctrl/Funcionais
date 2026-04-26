@@ -155,3 +155,69 @@
     display: flex;
     gap: 8px;
 }
+
+/* ── Atualização Geral (Sync) ─────────────────────────────────────────── */
+
+#vit-sync {
+    background: #fff;
+    padding: 16px 20px;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+#vit-sync h2 {
+    margin-top: 0;
+}
+.vit-sync-controls {
+    margin-bottom: 10px;
+}
+
+.vit-sync-section {
+    margin-top: 18px;
+    border-top: 1px solid #e5e5e5;
+    padding-top: 12px;
+}
+.vit-sync-section-inner h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+.vit-sync-count {
+    font-weight: normal;
+    color: #646970;
+}
+.vit-sync-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.vit-sync-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    background: #f6f7f7;
+    border: 1px solid #e5e5e5;
+    border-radius: 3px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+.vit-sync-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.vit-sync-row-status {
+    font-size: 12px;
+    color: #50575e;
+    min-width: 120px;
+}
+.vit-sync-row-status.vit-status-done  { color: #1a7a1a; font-weight: bold; }
+.vit-sync-row-status.vit-status-error { color: #dc3232; font-weight: bold; }
+
+.vit-sync-exec {
+    margin-top: 8px;
+}

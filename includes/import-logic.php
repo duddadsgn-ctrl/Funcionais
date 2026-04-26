@@ -238,16 +238,35 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
     if ( ! empty( $categoria ) )  $cat_arr['Categoria']  = $categoria;
     if ( ! empty( $finalidade ) ) $cat_arr['Finalidade'] = $finalidade;
 
-    // Campos de texto — sem Foto (não é campo válido como string neste endpoint)
+    // Campos de texto — lista abrangente para capturar absolutamente tudo.
+    // Usar [] (sem filtro) como segundo fallback garante que campos novos no CRM
+    // nunca sejam perdidos.
     $text_fields = [
-        'Codigo','CodigoCorretor','TituloSite','DescricaoWeb',
-        'Bairro','BairroComercial','Cidade','UF','Latitude','Longitude',
-        'Status','Finalidade','Categoria','Moeda','Exclusivo',
-        'Dormitorios','Suites','BanheiroSocialQtd','Vagas',
-        'AreaTotal','AreaPrivativa',
-        'ValorVenda','ValorLocacao','ValorIptu','ValorCondominio',
-        'Caracteristicas','InfraEstrutura','Imediacoes',
-        'DestaqueWeb','Lancamento','FotoDestaque','FotoDestaquePequena','ExibirNoSite',
+        // Identificação
+        'Codigo', 'CodigoCorretor', 'CodigoCliente',
+        // Título e descrição
+        'TituloSite', 'Titulo', 'DescricaoWeb', 'Descricao', 'Observacao',
+        // Localização
+        'Bairro', 'BairroComercial', 'Cidade', 'CidadeComercial', 'UF',
+        'CEP', 'Endereco', 'Numero', 'Complemento', 'Latitude', 'Longitude',
+        // Classificação
+        'Status', 'Finalidade', 'Categoria', 'Subcategoria', 'Moeda',
+        'Exclusivo', 'Lancamento', 'ExibirNoSite', 'DestaqueWeb', 'SuperDestaque',
+        // Cômodos e áreas
+        'Dormitorios', 'Suites', 'BanheiroSocialQtd', 'BanheiroSocialDesc',
+        'Vagas', 'SalaStarQtd', 'Closet', 'Hidromassagem', 'Living',
+        'AreaTotal', 'AreaPrivativa', 'AreaUtil', 'AreaTerreno',
+        'Frente', 'Fundo', 'LadoDireito', 'LadoEsquerdo',
+        // Acabamento de piso (por área)
+        'AcabamentoAreaSocial', 'AcabamentoDormitorios',
+        'AcabamentoAreaIntima', 'AcabamentoSalas',
+        // Valores
+        'ValorVenda', 'ValorVendaNegociavel', 'ValorLocacao',
+        'ValorIptu', 'ValorCondominio', 'ValorSeguroIncendio',
+        // Fotos de destaque (URLs)
+        'FotoDestaque', 'FotoDestaquePequena',
+        // Arrays (Sim/Não ou texto livre)
+        'Caracteristicas', 'InfraEstrutura', 'Imediacoes',
     ];
 
     // ---- Chamada 1: campos de texto ----
@@ -486,26 +505,69 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     ] );
     $log[] = "[TÍTULO] definido como: \"{$title}\"";
 
-    // Mapa: meta_key WP => nome do campo na API Vista
+    // Mapa completo: meta_key WP => nome do campo na API Vista.
+    // Cobre absolutamente todos os campos escalares conhecidos do Vista CRM.
     $map = [
-        '_vista_codigo'   => 'Codigo',
-        'codigo'          => 'Codigo',
-        'codigo_corretor' => 'CodigoCorretor',
-        'bairro'          => 'Bairro',
-        'cidade'          => 'Cidade',
-        'uf'              => 'UF',
-        'latitude'        => 'Latitude',
-        'longitude'       => 'Longitude',
-        'status'          => 'Status',
-        'finalidade'      => 'Finalidade',
-        'categoria'       => 'Categoria',
-        'moeda'           => 'Moeda',
-        'dormitorios'     => 'Dormitorios',
-        'suites'          => 'Suites',
-        'banheiros'       => 'BanheiroSocialQtd',
-        'vagas'           => 'Vagas',
-        'area_total'      => 'AreaTotal',
-        'area_privativa'  => 'AreaPrivativa',
+        // Identificação
+        '_vista_codigo'        => 'Codigo',
+        'codigo'               => 'Codigo',
+        'codigo_corretor'      => 'CodigoCorretor',
+        'codigo_cliente'       => 'CodigoCliente',
+        // Textos
+        'titulo_site'          => 'TituloSite',
+        'descricao_web'        => 'DescricaoWeb',
+        'observacao'           => 'Observacao',
+        // Localização
+        'bairro'               => 'Bairro',
+        'bairro_comercial'     => 'BairroComercial',
+        'cidade'               => 'Cidade',
+        'cidade_comercial'     => 'CidadeComercial',
+        'uf'                   => 'UF',
+        'cep'                  => 'CEP',
+        'endereco'             => 'Endereco',
+        'numero'               => 'Numero',
+        'complemento'          => 'Complemento',
+        'latitude'             => 'Latitude',
+        'longitude'            => 'Longitude',
+        // Classificação
+        'status'               => 'Status',
+        'finalidade'           => 'Finalidade',
+        'categoria'            => 'Categoria',
+        'subcategoria'         => 'Subcategoria',
+        'moeda'                => 'Moeda',
+        'exclusivo'            => 'Exclusivo',
+        'lancamento'           => 'Lancamento',
+        'exibir_no_site'       => 'ExibirNoSite',
+        'destaque_web'         => 'DestaqueWeb',
+        'super_destaque'       => 'SuperDestaque',
+        // Cômodos e áreas
+        'dormitorios'          => 'Dormitorios',
+        'suites'               => 'Suites',
+        'banheiros'            => 'BanheiroSocialQtd',
+        'banheiro_desc'        => 'BanheiroSocialDesc',
+        'vagas'                => 'Vagas',
+        'sala_star_qtd'        => 'SalaStarQtd',
+        'closet'               => 'Closet',
+        'hidromassagem'        => 'Hidromassagem',
+        'living'               => 'Living',
+        'area_total'           => 'AreaTotal',
+        'area_privativa'       => 'AreaPrivativa',
+        'area_util'            => 'AreaUtil',
+        'area_terreno'         => 'AreaTerreno',
+        'frente'               => 'Frente',
+        'fundo'                => 'Fundo',
+        'lado_direito'         => 'LadoDireito',
+        'lado_esquerdo'        => 'LadoEsquerdo',
+        // Acabamento de piso (por área)
+        'acabamento_social'    => 'AcabamentoAreaSocial',
+        'acabamento_dorms'     => 'AcabamentoDormitorios',
+        'acabamento_intimo'    => 'AcabamentoAreaIntima',
+        'acabamento_salas'     => 'AcabamentoSalas',
+        // Fotos de destaque
+        'foto_destaque'        => 'FotoDestaque',
+        'foto_destaque_peq'    => 'FotoDestaquePequena',
+        // Valores brutos (monetários são processados em bloco separado)
+        'valor_seguro'         => 'ValorSeguroIncendio',
     ];
 
     foreach ( $map as $meta_key => $api_key ) {
@@ -567,6 +629,7 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     }
 
     // Características, Infraestrutura, Imediações
+    // Imediacoes pode ser string de texto livre OU array de Sim/Não.
     $feature_map = [
         'caracteristicas' => 'Caracteristicas',
         'infraestrutura'  => 'InfraEstrutura',
@@ -574,25 +637,50 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
     ];
     foreach ( $feature_map as $meta_key => $api_key ) {
         $group = $data[ $api_key ] ?? null;
+
+        // String de texto livre (ex: "Próximo ao metrô, shopping, escolas")
+        if ( is_string( $group ) && trim( $group ) !== '' ) {
+            update_post_meta( $post_id, $meta_key, sanitize_textarea_field( $group ) );
+            $log[] = "[FEATURE] '{$api_key}' → texto livre salvo: \"" . mb_substr( $group, 0, 60 ) . "...\"";
+            $counters['saved']++;
+            continue;
+        }
+
         if ( empty( $group ) || ! is_array( $group ) ) {
-            $log[] = "[CARACTERISTICAS] '{$api_key}': vazio/ignorado.";
+            $log[] = "[FEATURE] '{$api_key}': vazio/ignorado.";
             $counters['empty']++;
             continue;
         }
+
+        // Array associativo {Nome: "Sim"/"Não"}
         $positive = array_keys( $group, 'Sim' );
         $total    = count( $group );
         $pos      = count( $positive );
-        $ignored  = $total - $pos;
 
-        $log[] = sprintf( "[CARACTERISTICAS] '%s' -> Total: %d | Positivos (Sim): %d | Ignorados: %d", $api_key, $total, $pos, $ignored );
+        $log[] = sprintf( "[FEATURE] '%s' → %d itens | %d marcados Sim", $api_key, $total, $pos );
         if ( $pos > 0 ) {
-            $log[] = sprintf( "[CARACTERISTICAS] '%s' positivos: %s", $api_key, implode( ', ', $positive ) );
+            $log[] = "[FEATURE] '{$api_key}' positivos: " . implode( ', ', $positive );
             update_post_meta( $post_id, $meta_key, implode( ', ', $positive ) );
             update_post_meta( $post_id, "_{$meta_key}_raw", $group );
             $counters['saved']++;
         } else {
             $counters['empty']++;
         }
+    }
+
+    // Catch-all: salva qualquer campo escalar que veio da API mas não está
+    // no $map acima, evitando perder dados de campos futuros do CRM.
+    $already_mapped = array_flip( array_values( $map ) );
+    $skip_keys = [ 'Foto', 'Fotos', 'Imagens', 'Caracteristicas', 'InfraEstrutura', 'Imediacoes',
+                   'TituloSite', 'Titulo', 'DescricaoWeb', 'Descricao' ];
+    foreach ( $data as $api_key => $value ) {
+        if ( isset( $already_mapped[ $api_key ] ) ) continue;
+        if ( in_array( $api_key, $skip_keys, true ) ) continue;
+        if ( ! is_scalar( $value ) || $value === '' || $value === null ) continue;
+        $meta_key = '_vista_' . strtolower( preg_replace( '/[^a-zA-Z0-9]/', '_', $api_key ) );
+        update_post_meta( $post_id, $meta_key, sanitize_text_field( (string) $value ) );
+        $log[] = "[EXTRA] API:'{$api_key}' → WP:'{$meta_key}' = \"{$value}\" | OK SALVO";
+        $counters['saved']++;
     }
 }
 

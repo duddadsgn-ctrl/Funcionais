@@ -66,8 +66,9 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
     $total        = 0;
 
     while ( true ) {
+        // Inclui Status para filtrar apenas imóveis ativos
         $params = [
-            'fields'    => [ 'Codigo', 'Categoria', 'Finalidade' ],
+            'fields'    => [ 'Codigo', 'Categoria', 'Finalidade', 'Status' ],
             'paginacao' => [ 'pagina' => $page, 'quantidade' => $per_page ],
         ];
         $resp = vit_call_api_get( $api_url, '/imoveis/listar', $api_key, $params, $log );
@@ -92,6 +93,11 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
             }
             $codigo = isset( $value['Codigo'] ) ? (string) $value['Codigo'] : '';
             if ( $codigo === '' ) {
+                continue;
+            }
+            // Apenas imóveis ativos entram na fila
+            $status = strtolower( trim( (string) ( $value['Status'] ?? '' ) ) );
+            if ( $status !== 'ativo' ) {
                 continue;
             }
             if ( isset( $meta_by_code[ $codigo ] ) ) {

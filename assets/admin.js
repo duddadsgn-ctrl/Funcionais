@@ -235,3 +235,219 @@
 
     hydrate();
 })();
+
+// ════════════════════════════════════════════════════════════════════════
+// Atualização Geral (Sync CRM ↔ WP)
+// ════════════════════════════════════════════════════════════════════════
+(function () {
+    'use strict';
+    if ( ! window.VIT_BULK ) return;
+    const cfg = window.VIT_BULK;
+
+    const syncRoot = document.getElementById( 'vit-sync' );
+    if ( ! syncRoot ) return;
+
+    const scanBtn  = document.getElementById( 'vit-sync-scan' );
+    const statusEl = document.getElementById( 'vit-sync-status' );
+    const secNovos    = document.getElementById( 'vit-sync-novos' );
+    const secRem      = document.getElementById( 'vit-sync-removidos' );
+    const secAmar     = document.getElementById( 'vit-sync-amarelos' );
+
+    function syncCall( action, data ) {
+        const body = new URLSearchParams();
+        body.append( 'action', action );
+        body.append( 'nonce', cfg.nonce );
+        if ( data ) Object.keys( data ).forEach( k => body.append( k, data[ k ] ) );
+        return fetch( cfg.ajax_url, { method: 'POST', credentials: 'same-origin', body } ).then( r => r.json() );
+    }
+
+    function syncStatus( msg, cls ) {
+        statusEl.textContent = msg || '';
+        statusEl.className = 'vit-status ' + ( cls || '' );
+    }
+
+    function esc( s ) {
+        return String( s == null ? '' : s )
+            .replace( /&/g, '&amp;' ).replace( /</g, '&lt;' )
+            .replace( />/g, '&gt;' ).replace( /"/g, '&quot;' );
+    }
+
+    // ── Render das 3 seções ──────────────────────────────────────────────
+
+    function renderSyncSection( el, title, items, buildRow, execAction, execLabel ) {
+        if ( ! items || items.length === 0 ) {
+            el.style.display = 'none';
+            return;
+        }
+        el.style.display = '';
+        let html = '<div class="vit-sync-section-inner">';
+        html += '<h3>' + esc( title ) + ' <span class="vit-sync-count">(' + items.length + ')</span></h3>';
+        html += '<div class="vit-sync-list">' + items.map( buildRow ).join( '' ) + '</div>';
+        html += '<div class="vit-sync-exec">';
+        html += '<button type="button" class="button vit-sync-exec-btn" data-action="' + esc( execAction ) + '">' + esc( execLabel ) + '</button>';
+        html += '</div></div>';
+        el.innerHTML = html;
+    }
+
+    function rowNovo( item ) {
+        return (
+            '<div class="vit-sync-row" data-code="' + esc( item.code ) + '">' +
+                '<span class="vit-code">#' + esc( item.code ) + '</span>' +
+                '<span class="vit-sync-label">Novo no CRM</span>' +
+                '<span class="vit-sync-row-status"></span>' +
+                '<button type="button" class="button vit-sync-import-new" data-code="' + esc( item.code ) + '">Importar</button>' +
+            '</div>'
+        );
+    }
+
+    function rowRemovido( item ) {
+        return (
+            '<div class="vit-sync-row" data-post-id="' + esc( item.post_id ) + '">' +
+                '<span class="vit-code">#' + esc( item.code ) + '</span>' +
+                '<span class="vit-sync-label">' + esc( item.title || item.code ) + '</span>' +
+                '<span class="vit-sync-row-status"></span>' +
+                '<button type="button" class="button vit-sync-delete" data-post-id="' + esc( item.post_id ) + '" data-code="' + esc( item.code ) + '">Remover</button>' +
+            '</div>'
+        );
+    }
+
+    function rowAmarelo( item ) {
+        const badge = '<span class="vit-badge vit-badge-' + esc( item.overall ) + '">' + esc( item.overall === 'yellow' ? 'Parcial' : 'Falhou' ) + '</span>';
+        return (
+            '<div class="vit-sync-row" data-code="' + esc( item.code ) + '">' +
+                badge +
+                '<span class="vit-sync-label">' + esc( item.title || item.code ) + '</span>' +
+                '<span class="vit-code">#' + esc( item.code ) + '</span>' +
+                '<span class="vit-sync-row-status"></span>' +
+                '<button type="button" class="button vit-sync-refresh" data-code="' + esc( item.code ) + '">Completar</button>' +
+            '</div>'
+        );
+    }
+
+    // ── Ações individuais ────────────────────────────────────────────────
+
+    function rowSetStatus( el, msg, cls ) {
+        const s = el.querySelector( '.vit-sync-row-status' );
+        if ( s ) { s.textContent = msg; s.className = 'vit-sync-row-status ' + ( cls || '' ); }
+    }
+
+    async function syncImportNew( btn ) {
+        const code = btn.getAttribute( 'data-code' );
+        const row  = btn.closest( '.vit-sync-row' );
+        btn.disabled = true;
+        rowSetStatus( row, 'importando…', '' );
+        const res = await syncCall( 'vit_ajax_sync_import_new', { code } );
+        if ( ! res || ! res.success ) {
+            rowSetStatus( row, 'Erro: ' + ( res?.data?.msg || 'falha' ), 'vit-status-error' );
+            btn.disabled = false;
+            return;
+        }
+        const d = res.data;
+        rowSetStatus( row, d.overall === 'green' ? 'Importado — verde!' : 'Importado (ainda parcial)', d.overall === 'green' ? 'vit-status-done' : '' );
+        btn.textContent = 'Reimportar';
+        btn.disabled = false;
+    }
+
+    async function syncDelete( btn ) {
+        const postId = btn.getAttribute( 'data-post-id' );
+        const code   = btn.getAttribute( 'data-code' );
+        if ( ! confirm( 'Remover imóvel #' + code + ' e todas as suas fotos do WordPress? Esta ação não pode ser desfeita.' ) ) return;
+        const row = btn.closest( '.vit-sync-row' );
+        btn.disabled = true;
+        rowSetStatus( row, 'removendo…', '' );
+        const res = await syncCall( 'vit_ajax_sync_delete_one', { post_id: postId } );
+        if ( ! res || ! res.success ) {
+            rowSetStatus( row, 'Erro: ' + ( res?.data?.msg || 'falha' ), 'vit-status-error' );
+            btn.disabled = false;
+            return;
+        }
+        rowSetStatus( row, 'Removido (' + res.data.attachments_deleted + ' fotos apagadas)', 'vit-status-done' );
+        btn.remove();
+    }
+
+    async function syncRefresh( btn ) {
+        const code = btn.getAttribute( 'data-code' );
+        const row  = btn.closest( '.vit-sync-row' );
+        btn.disabled = true;
+        rowSetStatus( row, 'buscando campos na API…', '' );
+        const res = await syncCall( 'vit_ajax_sync_refresh_one', { code } );
+        if ( ! res || ! res.success ) {
+            rowSetStatus( row, 'Erro: ' + ( res?.data?.msg || 'falha' ), 'vit-status-error' );
+            btn.disabled = false;
+            return;
+        }
+        const d = res.data;
+        const badge = row.querySelector( '.vit-badge' );
+        if ( badge ) {
+            badge.className = 'vit-badge vit-badge-' + d.overall;
+            badge.textContent = d.overall === 'green' ? 'Completo' : d.overall === 'yellow' ? 'Parcial' : 'Falhou';
+        }
+        rowSetStatus( row, d.overall === 'green' ? 'Agora verde!' : 'Ainda parcial (score ' + d.score + '/100)', d.overall === 'green' ? 'vit-status-done' : '' );
+        btn.disabled = false;
+    }
+
+    // ── Loops "Executar todos" ───────────────────────────────────────────
+
+    async function execAll( section, btnClass, handler ) {
+        const btns = Array.from( section.querySelectorAll( '.' + btnClass + ':not(:disabled)' ) );
+        for ( const btn of btns ) {
+            await handler( btn );
+            await new Promise( r => setTimeout( r, 150 ) );
+        }
+    }
+
+    // ── Scan principal ───────────────────────────────────────────────────
+
+    async function syncScan() {
+        scanBtn.disabled = true;
+        syncStatus( 'Varrendo CRM e comparando com o WordPress…', '' );
+        [ secNovos, secRem, secAmar ].forEach( s => { s.style.display = 'none'; s.innerHTML = ''; } );
+
+        const res = await syncCall( 'vit_ajax_sync_scan' );
+        scanBtn.disabled = false;
+
+        if ( ! res || ! res.success ) {
+            syncStatus( 'Erro: ' + ( res?.data?.msg || 'falha na varredura' ), 'vit-status-error' );
+            return;
+        }
+        const d = res.data;
+        syncStatus(
+            'Varredura concluída: ' + d.counts.novos + ' novos | ' +
+            d.counts.removidos + ' desativados | ' + d.counts.amarelos + ' parciais.',
+            d.counts.novos === 0 && d.counts.removidos === 0 && d.counts.amarelos === 0 ? 'vit-status-done' : ''
+        );
+
+        renderSyncSection( secNovos,    'Imóveis novos no CRM (não importados)',      d.novos,    rowNovo,     'import_new', 'Importar todos os novos' );
+        renderSyncSection( secRem,      'Desativados/ocultos — remover do WordPress', d.removidos, rowRemovido, 'delete',     'Remover todos desativados' );
+        renderSyncSection( secAmar,     'Imóveis parciais (amarelos) — pente fino',   d.amarelos, rowAmarelo,  'refresh',    'Completar todos os amarelos' );
+    }
+
+    // ── Delegação de cliques ─────────────────────────────────────────────
+
+    syncRoot.addEventListener( 'click', async function ( e ) {
+        const t = e.target;
+        if ( ! t ) return;
+
+        if ( t.id === 'vit-sync-scan' ) {
+            e.preventDefault();
+            syncScan();
+        } else if ( t.classList.contains( 'vit-sync-import-new' ) ) {
+            e.preventDefault();
+            syncImportNew( t );
+        } else if ( t.classList.contains( 'vit-sync-delete' ) ) {
+            e.preventDefault();
+            syncDelete( t );
+        } else if ( t.classList.contains( 'vit-sync-refresh' ) ) {
+            e.preventDefault();
+            syncRefresh( t );
+        } else if ( t.classList.contains( 'vit-sync-exec-btn' ) ) {
+            e.preventDefault();
+            const action = t.getAttribute( 'data-action' );
+            t.disabled = true;
+            if ( action === 'import_new' ) await execAll( secNovos, 'vit-sync-import-new', syncImportNew );
+            if ( action === 'delete' )     await execAll( secRem,   'vit-sync-delete',     syncDelete );
+            if ( action === 'refresh' )    await execAll( secAmar,  'vit-sync-refresh',    syncRefresh );
+            t.disabled = false;
+        }
+    } );
+})();

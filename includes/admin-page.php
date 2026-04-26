@@ -136,6 +136,24 @@ function vit_admin_page_html() {
             <div id="vit-list"></div>
         </div>
 
+        <div id="vit-sync">
+            <h2>Atualização Geral</h2>
+            <p style="color:#50575e;font-size:13px;margin-top:-6px;">
+                Compara o CRM com o WordPress: detecta imóveis novos, remove
+                desativados/ocultos (junto com todas as fotos) e passa o pente
+                fino em imóveis parciais (amarelos), buscando todos os campos
+                faltantes diretamente na API pelo código.
+            </p>
+            <div class="vit-sync-controls">
+                <button type="button" id="vit-sync-scan" class="button button-primary">Varrer CRM</button>
+            </div>
+            <div id="vit-sync-status" class="vit-status"></div>
+
+            <div id="vit-sync-novos"    class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-removidos" class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-amarelos" class="vit-sync-section" style="display:none;"></div>
+        </div>
+
     </div>
     <?php
 }

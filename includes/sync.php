@@ -224,23 +224,42 @@ function vit_ajax_sync_refresh_one() {
     $api_url = $plan['api_url'] ?? get_option( 'vit_api_url', '' );
     $api_key = $plan['api_key'] ?? get_option( 'vit_api_key', '' );
 
-    // Tenta pegar Categoria/Finalidade do plano de amarelos para melhor request
-    $cat = '';
-    $fin = '';
-    foreach ( (array) ( $plan['amarelos'] ?? [] ) as $item ) {
-        if ( (string) ( $item['code'] ?? '' ) === $code ) {
-            // Busca do post_meta caso o plano não tenha
-            $post_id = $item['post_id'] ?? 0;
-            if ( $post_id ) {
-                $cat = (string) get_post_meta( $post_id, 'categoria', true );
-                $fin = (string) get_post_meta( $post_id, 'finalidade', true );
-            }
-            break;
-        }
-    }
+    // Busca o post pelo código diretamente — independe de scan prévio.
+    // categoria e finalidade são hints de rota para /imoveis/detalhes;
+    // todos os ~50 campos são re-buscados pela lista $text_fields abrangente.
+    $q = new WP_Query( [
+        'post_type'      => 'imoveis',
+        'posts_per_page' => 1,
+        'fields'         => 'ids',
+        'meta_query'     => [ [ 'key' => '_vista_codigo', 'value' => $code ] ],
+    ] );
+    $found_id = $q->have_posts() ? (int) $q->posts[0] : 0;
+    $cat = $found_id ? (string) get_post_meta( $found_id, 'categoria',  true ) : '';
+    $fin = $found_id ? (string) get_post_meta( $found_id, 'finalidade', true ) : '';
 
     $result = vit_import_single_by_code( $api_url, $api_key, $code, $cat, $fin );
     $valid  = vit_validate_property( $result['post_id'] ?? 0 );
+
+    // Atualiza o plano de sync para refletir o novo status
+    $fresh_plan = get_option( VIT_SYNC_PLAN_OPTION, [] );
+    if ( ! empty( $fresh_plan['amarelos'] ) ) {
+        if ( $valid['overall'] === 'green' ) {
+            $fresh_plan['amarelos'] = array_values( array_filter(
+                $fresh_plan['amarelos'],
+                fn( $i ) => (string) ( $i['code'] ?? '' ) !== $code
+            ) );
+        } else {
+            foreach ( $fresh_plan['amarelos'] as &$item ) {
+                if ( (string) ( $item['code'] ?? '' ) === $code ) {
+                    $item['overall'] = $valid['overall'];
+                    $item['checks']  = $valid['checks'];
+                    $item['score']   = $valid['score'];
+                    break;
+                }
+            }
+        }
+        update_option( VIT_SYNC_PLAN_OPTION, $fresh_plan, false );
+    }
 
     wp_send_json_success( [
         'code'    => $code,

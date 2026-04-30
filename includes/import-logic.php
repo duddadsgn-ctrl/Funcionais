@@ -366,9 +366,28 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
 }
 
 /**
+ * Limita chamadas à API Vista a 290/min (margem antes dos 300 da Loft).
+ * Usa transient com bucket por minuto UTC. Se atingido, dorme até o próximo minuto.
+ */
+function vit_api_rate_limit() {
+    $key   = 'vit_rate_' . gmdate( 'YmdHi' );
+    $count = (int) get_transient( $key );
+
+    if ( $count >= 290 ) {
+        $secs_left = 60 - (int) gmdate( 's' );
+        sleep( max( 1, $secs_left + 1 ) );
+        $key   = 'vit_rate_' . gmdate( 'YmdHi' );
+        $count = 0;
+    }
+
+    set_transient( $key, $count + 1, 120 );
+}
+
+/**
  * GET helper simples — retorna array decodificado ou WP_Error.
  */
 function vit_raw_get( $url, &$log ) {
+    vit_api_rate_limit();
     @ini_set( 'default_socket_timeout', 35 );
     $raw = wp_remote_get( $url, [
         'timeout'         => 30,
@@ -408,6 +427,7 @@ function vit_raw_get( $url, &$log ) {
  * GET para /imoveis/listar — parâmetros via query string "pesquisa" em JSON.
  */
 function vit_call_api_get( $base_url, $endpoint, $api_key, $params, &$log ) {
+    vit_api_rate_limit();
     $url = rtrim( $base_url, '/' ) . $endpoint;
     $url = add_query_arg( [
         'key'      => $api_key,
@@ -711,6 +731,19 @@ function vit_process_property_images( $post_id, $data, &$log, &$counters ) {
     $featured_id      = 0;
     $total            = count( $photos );
 
+    // Mapa URL → attachment ID para imagens já na galeria.
+    // Evita qualquer HTTP ao CDN para fotos já importadas (refresh seguro).
+    $already_imported = [];
+    $cur_gallery = get_post_meta( $post_id, 'galeria', true );
+    if ( is_array( $cur_gallery ) ) {
+        foreach ( $cur_gallery as $att_id ) {
+            $origin = get_post_meta( (int) $att_id, '_vista_image_origin_url', true );
+            if ( $origin ) {
+                $already_imported[ $origin ] = (int) $att_id;
+            }
+        }
+    }
+
     foreach ( $photos as $i => $photo ) {
         $idx  = $i + 1;
         $url  = null;
@@ -733,6 +766,17 @@ function vit_process_property_images( $post_id, $data, &$log, &$counters ) {
         }
 
         $log[] = sprintf( "[IMAGEM %d/%d] URL: %s | Campo usado: '%s' | Destaque: %s", $idx, $total, $url, $used_field, $destaque ? 'Sim' : 'Não' );
+
+        // Skip sem HTTP: imagem já importada — reutiliza o attachment existente
+        if ( isset( $already_imported[ $url ] ) ) {
+            $attachment_id = $already_imported[ $url ];
+            $log[] = sprintf( "[IMAGEM %d/%d] Já importada (ID:%d). Reusando.", $idx, $total, $attachment_id );
+            $gallery_ids[] = $attachment_id;
+            if ( $destaque && ! $featured_id ) {
+                $featured_id = $attachment_id;
+            }
+            continue;
+        }
 
         $attachment_id = vit_sideload_image( $url, $post_id, get_the_title( $post_id ) );
         if ( is_wp_error( $attachment_id ) ) {

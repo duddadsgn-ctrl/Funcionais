@@ -684,7 +684,11 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
             update_post_meta( $post_id, "_{$meta_key}_raw", $group );
             $counters['saved']++;
         } else {
-            $counters['empty']++;
+            // CRM retornou o campo mas sem nenhum Sim → limpa meta para espelhar o CRM.
+            delete_post_meta( $post_id, $meta_key );
+            delete_post_meta( $post_id, "_{$meta_key}_raw" );
+            $log[] = "[FEATURE] '{$api_key}' → nenhum Sim: meta removida.";
+            $counters['saved']++;
         }
     }
 

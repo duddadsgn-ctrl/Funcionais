@@ -203,6 +203,7 @@ function vit_ajax_sync_import_new() {
         'score'    => $valid['score'],
         'checks'   => $valid['checks'],
         'edit_url' => $result['post_id'] ? get_edit_post_link( $result['post_id'], 'raw' ) : '',
+        'log'      => $result['log'] ?? [],
     ] );
 }
 
@@ -269,6 +270,7 @@ function vit_ajax_sync_refresh_one() {
         'score'   => $valid['score'],
         'checks'  => $valid['checks'],
         'edit_url'=> $result['post_id'] ? get_edit_post_link( $result['post_id'], 'raw' ) : '',
+        'log'     => $result['log'] ?? [],
     ] );
 }
 

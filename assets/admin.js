@@ -331,6 +331,27 @@
         if ( s ) { s.textContent = msg; s.className = 'vit-sync-row-status ' + ( cls || '' ); }
     }
 
+    function rowShowLog( row, logLines ) {
+        if ( ! logLines || ! logLines.length ) return;
+        const key = row.getAttribute( 'data-code' ) || row.getAttribute( 'data-post-id' ) || String( Math.random() );
+        const id  = 'vit-log-' + key.replace( /[^a-z0-9]/gi, '_' );
+        let logEl = document.getElementById( id );
+        if ( ! logEl ) {
+            logEl = document.createElement( 'details' );
+            logEl.id = id;
+            logEl.className = 'vit-sync-row-log';
+            row.parentNode.insertBefore( logEl, row.nextSibling );
+        }
+        const summary = document.createElement( 'summary' );
+        summary.textContent = 'Relatório (' + logLines.length + ' linhas)';
+        const pre = document.createElement( 'pre' );
+        pre.className = 'vit-sync-log-pre';
+        pre.textContent = logLines.join( '\n' );
+        logEl.innerHTML = '';
+        logEl.appendChild( summary );
+        logEl.appendChild( pre );
+    }
+
     async function syncImportNew( btn ) {
         const code = btn.getAttribute( 'data-code' );
         const row  = btn.closest( '.vit-sync-row' );
@@ -344,6 +365,7 @@
         }
         const d = res.data;
         rowSetStatus( row, d.overall === 'green' ? 'Importado — verde!' : 'Importado (ainda parcial)', d.overall === 'green' ? 'vit-status-done' : '' );
+        if ( d.log ) rowShowLog( row, d.log );
         btn.textContent = 'Reimportar';
         btn.disabled = false;
     }
@@ -383,6 +405,7 @@
             badge.textContent = d.overall === 'green' ? 'Completo' : d.overall === 'yellow' ? 'Parcial' : 'Falhou';
         }
         rowSetStatus( row, d.overall === 'green' ? 'Agora verde!' : 'Ainda parcial (score ' + d.score + '/100)', d.overall === 'green' ? 'vit-status-done' : '' );
+        if ( d.log ) rowShowLog( row, d.log );
         btn.disabled = false;
     }
 

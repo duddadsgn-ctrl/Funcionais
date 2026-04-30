@@ -221,3 +221,36 @@
 .vit-sync-exec {
     margin-top: 8px;
 }
+
+/* Log expandível após cada linha de sync */
+.vit-sync-row-log {
+    margin: 0;
+    border: 1px solid #dcdcde;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+    background: #f0f0f1;
+    font-size: 12px;
+}
+.vit-sync-row-log > summary {
+    cursor: pointer;
+    padding: 4px 10px;
+    color: #50575e;
+    user-select: none;
+    list-style: none;
+}
+.vit-sync-row-log > summary::-webkit-details-marker { display: none; }
+.vit-sync-row-log > summary::before { content: "\25B8"; margin-right: 4px; }
+.vit-sync-row-log[open] > summary::before { content: "\25BE"; }
+.vit-sync-log-pre {
+    margin: 0;
+    padding: 8px 10px 10px;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid #dcdcde;
+    background: #fff;
+}

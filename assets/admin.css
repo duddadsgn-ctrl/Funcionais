@@ -126,6 +126,11 @@
     font-family: monospace;
     font-size: 12px;
 }
+.vit-updated {
+    font-size: 11px;
+    color: #8c8f94;
+    white-space: nowrap;
+}
 
 .vit-checks {
     padding: 4px 16px 12px 30px;

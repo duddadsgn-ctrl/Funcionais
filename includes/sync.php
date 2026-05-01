@@ -221,15 +221,17 @@ function vit_ajax_sync_import_new() {
     $result = vit_import_single_by_code( $api_url, $api_key, $code, $meta['Categoria'] ?? '', $meta['Finalidade'] ?? '' );
     $valid  = vit_validate_property( $result['post_id'] ?? 0 );
 
+    $pid_new = $result['post_id'] ?? 0;
     wp_send_json_success( [
-        'code'     => $code,
-        'post_id'  => $result['post_id'] ?? 0,
-        'title'    => $result['title'] ?? '',
-        'overall'  => $valid['overall'],
-        'score'    => $valid['score'],
-        'checks'   => $valid['checks'],
-        'edit_url' => $result['post_id'] ? get_edit_post_link( $result['post_id'], 'raw' ) : '',
-        'log'      => $result['log'] ?? [],
+        'code'       => $code,
+        'post_id'    => $pid_new,
+        'title'      => $result['title'] ?? '',
+        'overall'    => $valid['overall'],
+        'score'      => $valid['score'],
+        'checks'     => $valid['checks'],
+        'edit_url'   => $pid_new ? get_edit_post_link( $pid_new, 'raw' ) : '',
+        'updated_at' => $pid_new ? (string) get_post_meta( $pid_new, 'data_hora_atualizacao', true ) : '',
+        'log'        => $result['log'] ?? [],
     ] );
 }
 
@@ -289,15 +291,17 @@ function vit_ajax_sync_refresh_one() {
         update_option( VIT_SYNC_PLAN_OPTION, $fresh_plan, false );
     }
 
+    $pid_ref = $result['post_id'] ?? 0;
     wp_send_json_success( [
-        'code'    => $code,
-        'post_id' => $result['post_id'] ?? 0,
-        'title'   => $result['title'] ?? '',
-        'overall' => $valid['overall'],
-        'score'   => $valid['score'],
-        'checks'  => $valid['checks'],
-        'edit_url'=> $result['post_id'] ? get_edit_post_link( $result['post_id'], 'raw' ) : '',
-        'log'     => $result['log'] ?? [],
+        'code'       => $code,
+        'post_id'    => $pid_ref,
+        'title'      => $result['title'] ?? '',
+        'overall'    => $valid['overall'],
+        'score'      => $valid['score'],
+        'checks'     => $valid['checks'],
+        'edit_url'   => $pid_ref ? get_edit_post_link( $pid_ref, 'raw' ) : '',
+        'updated_at' => $pid_ref ? (string) get_post_meta( $pid_ref, 'data_hora_atualizacao', true ) : '',
+        'log'        => $result['log'] ?? [],
     ] );
 }
 

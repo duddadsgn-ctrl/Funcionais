@@ -152,7 +152,8 @@ function vit_validate_completeness( $post_id, $info, $images ) {
         $score += 20;
     }
 
-    if ( $info['status'] === 'ok' && $images['status'] === 'ok' && $has_features ) {
+    // Verde quando info + imagens ok. Features (caract/infra/imed) somam score mas não bloqueiam.
+    if ( $info['status'] === 'ok' && $images['status'] === 'ok' ) {
         $status = 'ok';
     } elseif ( $info['status'] === 'fail' ) {
         $status = 'fail';

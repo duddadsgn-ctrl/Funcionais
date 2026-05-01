@@ -69,12 +69,23 @@
         );
     }
 
+    function fmtTs( item ) {
+        if ( item.updated_at ) return item.updated_at.replace( /:\d{2}$/, '' ); // remove segundos
+        if ( item.updated ) {
+            const d = new Date( item.updated * 1000 );
+            return d.toLocaleDateString( 'pt-BR', { day: '2-digit', month: '2-digit' } ) + ' ' +
+                   d.toLocaleTimeString( 'pt-BR', { hour: '2-digit', minute: '2-digit' } );
+        }
+        return '';
+    }
+
     function renderItem( item ) {
         const overall  = item.overall || 'red';
         const checks   = item.checks  || {};
         const info     = checks.info     || {};
         const images   = checks.images   || {};
         const complete = checks.complete || {};
+        const ts       = fmtTs( item );
 
         const infoDetail = () => {
             const present = ( info.present || [] ).length;
@@ -102,6 +113,7 @@
                     '<span class="vit-badge vit-badge-' + overall + '">' + LABELS.overall[ overall ] + '</span> ' +
                     '<span class="vit-title">' + esc( item.title || ( 'Imóvel ' + item.code ) ) + '</span> ' +
                     '<span class="vit-code">#' + esc( item.code ) + '</span>' +
+                    ( ts ? ' <span class="vit-updated" title="Última importação">↻ ' + esc( ts ) + '</span>' : '' ) +
                 '</summary>' +
                 '<div class="vit-checks">' +
                     buildCheckLine( 'Informações importadas?', info, infoDetail ) +
@@ -234,6 +246,9 @@
     } );
 
     hydrate();
+
+    // Bridge para o painel de sync atualizar cards desta seção
+    window.VIT_LIST = { renderOrUpdateItem, fmtTs };
 })();
 
 // ════════════════════════════════════════════════════════════════════════
@@ -390,8 +405,12 @@
             return;
         }
         const d = res.data;
-        rowSetStatus( row, d.overall === 'green' ? 'Importado — verde!' : 'Importado (ainda parcial)', d.overall === 'green' ? 'vit-status-done' : '' );
+        const tsLabel = d.updated_at ? ' — ' + d.updated_at.replace( /:\d{2}$/, '' ) : '';
+        rowSetStatus( row, d.overall === 'green' ? 'Importado — verde!' + tsLabel : 'Importado (ainda parcial)' + tsLabel, d.overall === 'green' ? 'vit-status-done' : '' );
         if ( d.log ) rowShowLog( row, d.log );
+        if ( window.VIT_LIST ) {
+            window.VIT_LIST.renderOrUpdateItem( { ...d, updated: Math.floor( Date.now() / 1000 ) } );
+        }
         btn.textContent = 'Reimportar';
         btn.disabled = false;
     }
@@ -430,8 +449,12 @@
             badge.className = 'vit-badge vit-badge-' + d.overall;
             badge.textContent = d.overall === 'green' ? 'Completo' : d.overall === 'yellow' ? 'Parcial' : 'Falhou';
         }
-        rowSetStatus( row, d.overall === 'green' ? 'Agora verde!' : 'Ainda parcial (score ' + d.score + '/100)', d.overall === 'green' ? 'vit-status-done' : '' );
+        const tsRefLabel = d.updated_at ? ' — ' + d.updated_at.replace( /:\d{2}$/, '' ) : '';
+        rowSetStatus( row, d.overall === 'green' ? 'Agora verde!' + tsRefLabel : 'Ainda parcial (score ' + d.score + '/100)' + tsRefLabel, d.overall === 'green' ? 'vit-status-done' : '' );
         if ( d.log ) rowShowLog( row, d.log );
+        if ( window.VIT_LIST ) {
+            window.VIT_LIST.renderOrUpdateItem( { ...d, updated: Math.floor( Date.now() / 1000 ) } );
+        }
         btn.disabled = false;
     }
 

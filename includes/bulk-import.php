@@ -233,6 +233,7 @@ function vit_ajax_start_queue() {
 }
 
 function vit_ajax_process_next() {
+    @set_time_limit( 300 );
     vit_bulk_guard();
 
     $state = vit_queue_get();

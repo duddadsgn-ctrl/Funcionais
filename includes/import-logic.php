@@ -394,8 +394,8 @@ function vit_api_rate_limit() {
     if ( $count >= 290 ) {
         $secs_left = 60 - (int) gmdate( 's' );
         sleep( max( 1, $secs_left + 1 ) );
-        $key   = 'vit_rate_' . gmdate( 'YmdHi' );
-        $count = 0;
+        $key   = 'vit_rate_' . gmdate( 'YmdHi' ); // novo bucket após sleep
+        $count = (int) get_transient( $key );       // lê o novo bucket (pode ter outras requisições)
     }
 
     set_transient( $key, $count + 1, 120 );

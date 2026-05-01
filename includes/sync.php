@@ -195,6 +195,7 @@ function vit_ajax_sync_scan() {
  * Importa um único imóvel novo (código deve estar no plano de sync).
  */
 function vit_ajax_sync_import_new() {
+    @set_time_limit( 300 );
     check_ajax_referer( 'vit_bulk_nonce', 'nonce' );
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( [ 'msg' => 'sem permissão' ], 403 );
@@ -236,6 +237,7 @@ function vit_ajax_sync_import_new() {
  * Reimporta um imóvel existente (pente fino: busca tudo na API e preenche).
  */
 function vit_ajax_sync_refresh_one() {
+    @set_time_limit( 300 );
     check_ajax_referer( 'vit_bulk_nonce', 'nonce' );
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( [ 'msg' => 'sem permissão' ], 403 );

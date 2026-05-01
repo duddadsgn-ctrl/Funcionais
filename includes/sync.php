@@ -112,7 +112,8 @@ function vit_ajax_sync_scan() {
     if ( is_wp_error( $fetched ) ) {
         wp_send_json_error( [ 'msg' => 'Falha ao listar CRM: ' . $fetched->get_error_message() ] );
     }
-    $crm_active = array_flip( $fetched['codes'] );
+    $crm_active        = array_flip( $fetched['codes'] );
+    $crm_inactive_map  = $fetched['inactive_by_code'] ?? [];  // código → status real no CRM
 
     // Guarda contra lista vazia: se o CRM não retornou nenhum imóvel ativo, a API provavelmente falhou.
     // Sem este guarda, TODOS os imóveis do WP apareceriam como "desativados".
@@ -125,13 +126,10 @@ function vit_ajax_sync_scan() {
     // Imóveis no WP
     $wp_props = vit_get_all_wp_properties();
 
-    $novos      = [];
-    $removidos  = [];   // fora do CRM + status Suspenso/Oculto/Inativo → recomendar remoção
-    $fora_crm   = [];   // fora do CRM mas status ativo no WP → apenas aviso
-    $amarelos   = [];
-
-    // Statuses que indicam imóvel explicitamente inativo/suspenso no CRM Vista
-    $status_remover = [ 'Suspenso', 'Oculto', 'Inativo' ];
+    $novos           = [];
+    $desativados_crm = [];   // no WP e no CRM, mas com status não-ativo no CRM
+    $fora_crm        = [];   // no WP mas não encontrado em nenhuma lista do CRM
+    $amarelos        = [];
 
     foreach ( $crm_active as $code => $_ ) {
         if ( ! isset( $wp_props[ $code ] ) ) {
@@ -140,8 +138,8 @@ function vit_ajax_sync_scan() {
                 'meta' => $fetched['meta_by_code'][ $code ] ?? [],
             ];
         } else {
-            $prop    = $wp_props[ $code ];
-            $valid   = vit_validate_property( $prop['post_id'] );
+            $prop  = $wp_props[ $code ];
+            $valid = vit_validate_property( $prop['post_id'] );
             if ( $valid['overall'] !== 'green' ) {
                 $amarelos[] = array_merge( $prop, [
                     'overall' => $valid['overall'],
@@ -156,38 +154,40 @@ function vit_ajax_sync_scan() {
         if ( isset( $crm_active[ $code ] ) ) {
             continue;
         }
-        $wp_status = $prop['wp_status'] ?? '';
-        if ( in_array( $wp_status, $status_remover, true ) ) {
-            $removidos[] = $prop;
+        if ( isset( $crm_inactive_map[ $code ] ) ) {
+            // Existe no CRM mas com status não-ativo (Vendido, Locado, Suspenso, etc.)
+            $desativados_crm[] = array_merge( $prop, [
+                'crm_status' => $crm_inactive_map[ $code ],
+            ] );
         } else {
-            // Status ativo (Venda, Locação, etc.) mas ausente do CRM → aviso, sem remoção automática
+            // Não encontrado em nenhuma lista do CRM → verificar manualmente
             $fora_crm[] = $prop;
         }
     }
 
     $plan = [
-        'novos'          => $novos,
-        'removidos'      => $removidos,
-        'fora_crm'       => $fora_crm,
-        'amarelos'       => $amarelos,
-        'crm_active_map' => array_keys( $crm_active ),
-        'scanned_at'     => time(),
-        'api_url'        => $api_url,
-        'api_key'        => $api_key,
+        'novos'           => $novos,
+        'desativados_crm' => $desativados_crm,
+        'fora_crm'        => $fora_crm,
+        'amarelos'        => $amarelos,
+        'crm_active_map'  => array_keys( $crm_active ),
+        'scanned_at'      => time(),
+        'api_url'         => $api_url,
+        'api_key'         => $api_key,
     ];
     update_option( VIT_SYNC_PLAN_OPTION, $plan, false );
 
     wp_send_json_success( [
         'counts' => [
-            'novos'     => count( $novos ),
-            'removidos' => count( $removidos ),
-            'fora_crm'  => count( $fora_crm ),
-            'amarelos'  => count( $amarelos ),
+            'novos'           => count( $novos ),
+            'desativados_crm' => count( $desativados_crm ),
+            'fora_crm'        => count( $fora_crm ),
+            'amarelos'        => count( $amarelos ),
         ],
-        'novos'    => $novos,
-        'removidos' => $removidos,
-        'fora_crm' => $fora_crm,
-        'amarelos' => $amarelos,
+        'novos'           => $novos,
+        'desativados_crm' => $desativados_crm,
+        'fora_crm'        => $fora_crm,
+        'amarelos'        => $amarelos,
     ] );
 }
 

@@ -58,12 +58,13 @@ function vit_bulk_guard() {
  * ou WP_Error.
  */
 function vit_fetch_all_codes( $api_url, $api_key ) {
-    $codes        = [];
-    $meta_by_code = [];
-    $log          = [];
-    $per_page     = 50;
-    $page         = 1;
-    $total        = 0;
+    $codes            = [];
+    $meta_by_code     = [];
+    $inactive_by_code = [];  // código → status CRM para os não-ativos
+    $log              = [];
+    $per_page         = 50;
+    $page             = 1;
+    $total            = 0;
 
     while ( true ) {
         // Inclui Status para filtrar apenas imóveis ativos
@@ -91,14 +92,20 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
             if ( ! is_array( $value ) ) {
                 continue;
             }
-            $codigo = isset( $value['Codigo'] ) ? (string) $value['Codigo'] : '';
+            $codigo     = isset( $value['Codigo'] ) ? (string) $value['Codigo'] : '';
+            $status_raw = trim( (string) ( $value['Status'] ?? '' ) );
+            $status     = strtolower( $status_raw );
             if ( $codigo === '' ) {
                 continue;
             }
-            // Exclui apenas statuses explicitamente inativos; Venda, Locação, Ativo etc. são todos "ativos"
-            $status = strtolower( trim( (string) ( $value['Status'] ?? '' ) ) );
-            $inativos = [ 'suspenso', 'oculto', 'inativo', 'vendido', 'locado' ];
-            if ( in_array( $status, $inativos, true ) ) {
+            // Statuses ativos no Vista CRM (qualquer outro é inativo/desativado)
+            $ativos = [ 'venda', 'locação', 'locacao', 'venda e locação', 'venda e locacao',
+                        'aluguel', 'venda e aluguel', 'ativo' ];
+            if ( ! in_array( $status, $ativos, true ) ) {
+                // Guarda o status real do CRM para exibir na varredura
+                if ( ! isset( $inactive_by_code[ $codigo ] ) ) {
+                    $inactive_by_code[ $codigo ] = $status_raw ?: 'Inativo';
+                }
                 continue;
             }
             if ( isset( $meta_by_code[ $codigo ] ) ) {
@@ -129,10 +136,11 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
     }
 
     return [
-        'codes'        => $codes,
-        'meta_by_code' => $meta_by_code,
-        'total'        => $total,
-        'log'          => $log,
+        'codes'            => $codes,
+        'meta_by_code'     => $meta_by_code,
+        'inactive_by_code' => $inactive_by_code,
+        'total'            => $total,
+        'log'              => $log,
     ];
 }
 

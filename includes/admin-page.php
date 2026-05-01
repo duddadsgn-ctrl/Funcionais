@@ -156,10 +156,10 @@ function vit_admin_page_html() {
             </div>
             <div id="vit-sync-status" class="vit-status"></div>
 
-            <div id="vit-sync-novos"    class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-removidos" class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-fora-crm"  class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-amarelos" class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-novos"       class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-desativados" class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-fora-crm"    class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-amarelos"    class="vit-sync-section" style="display:none;"></div>
         </div>
 
     </div>

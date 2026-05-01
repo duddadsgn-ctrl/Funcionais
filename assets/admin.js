@@ -134,6 +134,15 @@
         els.bar.style.width = pct + '%';
     }
 
+    // Recontagem dos chips Verde/Amarelo/Vermelho a partir dos cards no DOM.
+    // Chamado após qualquer update que altere a cor de um card (sync refresh, retry, etc.)
+    function recomputeCounters() {
+        if ( ! els.list ) return;
+        els.green.textContent  = els.list.querySelectorAll( '.vit-item-green'  ).length;
+        els.yellow.textContent = els.list.querySelectorAll( '.vit-item-yellow' ).length;
+        els.red.textContent    = els.list.querySelectorAll( '.vit-item-red'    ).length;
+    }
+
     const LABELS = {
         overall: { green: 'Completo', yellow: 'Parcial', red: 'Falhou' },
         check:   { ok: 'Sim', partial: 'Parcial', fail: 'Não' },
@@ -224,6 +233,7 @@
         } else {
             els.list.prepend( next );
         }
+        recomputeCounters();
     }
 
     function esc( s ) {
@@ -352,10 +362,10 @@
 
     const scanBtn  = document.getElementById( 'vit-sync-scan' );
     const statusEl = document.getElementById( 'vit-sync-status' );
-    const secNovos    = document.getElementById( 'vit-sync-novos' );
-    const secRem      = document.getElementById( 'vit-sync-removidos' );
-    const secForaCrm  = document.getElementById( 'vit-sync-fora-crm' );
-    const secAmar     = document.getElementById( 'vit-sync-amarelos' );
+    const secNovos       = document.getElementById( 'vit-sync-novos' );
+    const secDesativados = document.getElementById( 'vit-sync-desativados' );
+    const secForaCrm     = document.getElementById( 'vit-sync-fora-crm' );
+    const secAmar        = document.getElementById( 'vit-sync-amarelos' );
 
     function syncCall( action, data ) {
         const body = new URLSearchParams();
@@ -415,15 +425,16 @@
         return parts.length ? '<span class="vit-sync-meta">' + esc( parts.join( ' · ' ) ) + '</span>' : '';
     }
 
-    function rowRemovido( item ) {
+    function rowDesativadoCrm( item ) {
+        // Status CRM real (Vendido, Locado, Suspenso, etc.) + botão de remoção manual
         return (
             '<div class="vit-sync-row" data-post-id="' + esc( item.post_id ) + '">' +
-                statusBadgeHtml( item.wp_status, 'vit-sync-badge-red' ) +
+                statusBadgeHtml( item.crm_status || item.wp_status || '?', 'vit-sync-badge-red' ) +
                 '<span class="vit-sync-label">' + esc( item.title || item.code ) + '</span>' +
                 '<span class="vit-code">#' + esc( item.code ) + '</span>' +
                 metaHtml( item ) +
                 '<span class="vit-sync-row-status"></span>' +
-                '<button type="button" class="button vit-sync-delete" data-post-id="' + esc( item.post_id ) + '" data-code="' + esc( item.code ) + '">Remover</button>' +
+                '<button type="button" class="button vit-sync-delete" data-post-id="' + esc( item.post_id ) + '" data-code="' + esc( item.code ) + '">Remover do WP</button>' +
             '</div>'
         );
     }
@@ -563,7 +574,7 @@
     async function syncScan() {
         scanBtn.disabled = true;
         syncStatus( 'Varrendo CRM e comparando com o WordPress…', '' );
-        [ secNovos, secRem, secForaCrm, secAmar ].forEach( s => { s.style.display = 'none'; s.innerHTML = ''; } );
+        [ secNovos, secDesativados, secForaCrm, secAmar ].forEach( s => { s.style.display = 'none'; s.innerHTML = ''; } );
 
         const res = await syncCall( 'vit_ajax_sync_scan' );
         scanBtn.disabled = false;
@@ -574,17 +585,17 @@
         }
         const d = res.data;
         const cnt = d.counts;
-        const allClear = cnt.novos === 0 && cnt.removidos === 0 && cnt.fora_crm === 0 && cnt.amarelos === 0;
+        const allClear = cnt.novos === 0 && cnt.desativados_crm === 0 && cnt.fora_crm === 0 && cnt.amarelos === 0;
         let msg = 'Varredura concluída: ' + cnt.novos + ' novos | ' +
-            cnt.removidos + ' suspensos | ' + cnt.amarelos + ' parciais';
+            cnt.desativados_crm + ' desativados no CRM | ' + cnt.amarelos + ' parciais';
         if ( cnt.fora_crm ) msg += ' | ' + cnt.fora_crm + ' ausentes do CRM';
         msg += '.';
         syncStatus( msg, allClear ? 'vit-status-done' : '' );
 
-        renderSyncSection( secNovos,   'Imóveis novos no CRM (não importados)',                     d.novos,    rowNovo,    'import_new', 'Importar todos os novos' );
-        renderSyncSection( secRem,     'Suspensos/Ocultos — remover do WordPress',                  d.removidos, rowRemovido, 'delete',   'Remover todos suspensos' );
-        renderSyncSection( secForaCrm, 'Ausentes do CRM mas ativos no WP — verificar manualmente',  d.fora_crm || [], rowForaCrm, '', '' );
-        renderSyncSection( secAmar,    'Imóveis parciais (amarelos) — pente fino',                  d.amarelos, rowAmarelo,  'refresh',  'Completar todos os amarelos' );
+        renderSyncSection( secNovos,       'Imóveis novos no CRM (não importados)',                       d.novos,              rowNovo,           'import_new', 'Importar todos os novos' );
+        renderSyncSection( secDesativados, 'Desativados no CRM — remover do WordPress (decisão humana)',  d.desativados_crm,    rowDesativadoCrm,  'delete',     'Remover todos desativados' );
+        renderSyncSection( secForaCrm,     'Ausentes do CRM — verificar manualmente',                    d.fora_crm || [],     rowForaCrm,        '',           '' );
+        renderSyncSection( secAmar,        'Imóveis parciais (amarelos) — pente fino',                   d.amarelos,           rowAmarelo,        'refresh',    'Completar todos os amarelos' );
     }
 
     // ── Delegação de cliques ─────────────────────────────────────────────
@@ -609,9 +620,9 @@
             e.preventDefault();
             const action = t.getAttribute( 'data-action' );
             t.disabled = true;
-            if ( action === 'import_new' ) await execAll( secNovos, 'vit-sync-import-new', syncImportNew );
-            if ( action === 'delete' )     await execAll( secRem,   'vit-sync-delete',     syncDelete );
-            if ( action === 'refresh' )    await execAll( secAmar,  'vit-sync-refresh',    syncRefresh );
+            if ( action === 'import_new' ) await execAll( secNovos,       'vit-sync-import-new', syncImportNew );
+            if ( action === 'delete' )     await execAll( secDesativados, 'vit-sync-delete',     syncDelete );
+            if ( action === 'refresh' )    await execAll( secAmar,        'vit-sync-refresh',    syncRefresh );
             t.disabled = false;
         }
     } );

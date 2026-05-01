@@ -447,6 +447,20 @@ function vit_api_rate_limit() {
 }
 
 /**
+ * Retorna o estado atual do rate limiter para exibição no painel.
+ */
+function vit_api_rate_status() {
+    $key   = 'vit_rate_' . gmdate( 'YmdHi' );
+    $count = (int) get_transient( $key );
+    return [
+        'count'    => $count,
+        'limit'    => 290,
+        'reset_in' => 60 - (int) gmdate( 's' ),
+        'paused'   => $count >= 290,
+    ];
+}
+
+/**
  * GET helper simples — retorna array decodificado ou WP_Error.
  */
 function vit_raw_get( $url, &$log ) {

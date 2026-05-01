@@ -109,6 +109,13 @@ function vit_admin_page_html() {
             <?php submit_button( 'Importar 1 imóvel de teste' ); ?>
         </form>
 
+        <div id="vit-rate-counter" style="display:none;">
+            <span id="vit-rate-label">0/290 req/min</span>
+            <div class="vit-rate-track"><div id="vit-rate-fill" class="green"></div></div>
+            <span id="vit-rate-reset">renova em —s</span>
+            <span id="vit-rate-state"></span>
+        </div>
+
         <div id="vit-bulk">
             <h2>Importação em Lote — Validador de Imóveis</h2>
             <p style="color:#50575e;font-size:13px;margin-top:-6px;">

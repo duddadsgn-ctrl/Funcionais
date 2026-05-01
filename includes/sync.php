@@ -232,6 +232,7 @@ function vit_ajax_sync_import_new() {
         'edit_url'   => $pid_new ? get_edit_post_link( $pid_new, 'raw' ) : '',
         'updated_at' => $pid_new ? (string) get_post_meta( $pid_new, 'data_hora_atualizacao', true ) : '',
         'log'        => $result['log'] ?? [],
+        'rate'       => vit_api_rate_status(),
     ] );
 }
 
@@ -302,6 +303,7 @@ function vit_ajax_sync_refresh_one() {
         'edit_url'   => $pid_ref ? get_edit_post_link( $pid_ref, 'raw' ) : '',
         'updated_at' => $pid_ref ? (string) get_post_meta( $pid_ref, 'data_hora_atualizacao', true ) : '',
         'log'        => $result['log'] ?? [],
+        'rate'       => vit_api_rate_status(),
     ] );
 }
 

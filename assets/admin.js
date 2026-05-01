@@ -1,3 +1,84 @@
+// ════════════════════════════════════════════════════════════════════════
+// Contador de requisições à API (compartilhado entre os dois painéis)
+// ════════════════════════════════════════════════════════════════════════
+(function () {
+    'use strict';
+
+    const LIMIT = 290;
+    let rateCount    = 0;
+    let rateResetIn  = 60;
+    let ratePaused   = false;
+    let rateStateMsg = '';
+    let rateTimer    = null;
+    let stateTimer   = null;
+
+    function renderBar() {
+        const el    = document.getElementById( 'vit-rate-counter' );
+        const label = document.getElementById( 'vit-rate-label' );
+        const fill  = document.getElementById( 'vit-rate-fill' );
+        const reset = document.getElementById( 'vit-rate-reset' );
+        const state = document.getElementById( 'vit-rate-state' );
+        if ( ! el ) return;
+
+        el.style.display = '';
+        el.className = ratePaused ? 'vit-rate-paused' : '';
+
+        const pct = Math.min( 100, Math.round( rateCount / LIMIT * 100 ) );
+        if ( label ) label.textContent = rateCount + '/' + LIMIT + ' req/min';
+        if ( fill ) {
+            fill.style.width = pct + '%';
+            fill.className = pct >= 100 ? 'red' : pct >= 70 ? 'yellow' : 'green';
+        }
+        if ( reset ) reset.textContent = 'renova em ' + rateResetIn + 's';
+        if ( state ) {
+            if ( rateStateMsg === 'paused' )   state.textContent = '⏸ Aguardando renovação…';
+            else if ( rateStateMsg === 'resumed' ) state.textContent = '▶ Retomado';
+            else state.textContent = '';
+        }
+    }
+
+    function showState( msg ) {
+        rateStateMsg = msg;
+        renderBar();
+        clearTimeout( stateTimer );
+        if ( msg === 'resumed' ) {
+            stateTimer = setTimeout( () => { rateStateMsg = ''; renderBar(); }, 3000 );
+        }
+    }
+
+    function tick() {
+        rateResetIn = Math.max( 0, rateResetIn - 1 );
+        if ( rateResetIn === 0 ) {
+            const wasPaused = ratePaused;
+            rateCount   = 0;
+            ratePaused  = false;
+            rateResetIn = 60;
+            if ( wasPaused ) showState( 'resumed' );
+        }
+        renderBar();
+    }
+
+    window.VIT_RATE = {
+        update: function ( rate ) {
+            if ( ! rate ) return;
+            const wasPaused = ratePaused;
+            rateCount   = rate.count   || 0;
+            rateResetIn = rate.reset_in || 0;
+            ratePaused  = !! rate.paused;
+
+            if ( ! wasPaused && ratePaused ) showState( 'paused' );
+            else if ( wasPaused && ! ratePaused ) showState( 'resumed' );
+
+            renderBar();
+            clearInterval( rateTimer );
+            rateTimer = setInterval( tick, 1000 );
+        },
+    };
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// Importação em Lote
+// ════════════════════════════════════════════════════════════════════════
 (function () {
     'use strict';
 
@@ -195,6 +276,7 @@
             els.start.disabled = false;
             return;
         }
+        if ( res.data.rate  ) window.VIT_RATE && window.VIT_RATE.update( res.data.rate );
         if ( res.data.item ) renderOrUpdateItem( res.data.item );
         updateProgress( res.data.progress );
         if ( res.data.done ) {
@@ -214,6 +296,7 @@
             setStatus( 'Erro no retry: ' + ( ( res && res.data && res.data.msg ) || 'falha' ), 'vit-status-error' );
             return;
         }
+        if ( res.data.rate  ) window.VIT_RATE && window.VIT_RATE.update( res.data.rate );
         if ( res.data.item ) renderOrUpdateItem( res.data.item );
         updateProgress( res.data.progress );
         setStatus( '#' + code + ' atualizado.', 'vit-status-done' );
@@ -410,6 +493,7 @@
             return;
         }
         const d = res.data;
+        if ( d.rate ) window.VIT_RATE && window.VIT_RATE.update( d.rate );
         const tsLabel = d.updated_at ? ' — ' + d.updated_at.replace( /:\d{2}$/, '' ) : '';
         rowSetStatus( row, d.overall === 'green' ? 'Importado — verde!' + tsLabel : 'Importado (ainda parcial)' + tsLabel, d.overall === 'green' ? 'vit-status-done' : '' );
         if ( d.log ) rowShowLog( row, d.log );
@@ -454,6 +538,7 @@
             badge.className = 'vit-badge vit-badge-' + d.overall;
             badge.textContent = d.overall === 'green' ? 'Completo' : d.overall === 'yellow' ? 'Parcial' : 'Falhou';
         }
+        if ( d.rate ) window.VIT_RATE && window.VIT_RATE.update( d.rate );
         const tsRefLabel = d.updated_at ? ' — ' + d.updated_at.replace( /:\d{2}$/, '' ) : '';
         rowSetStatus( row, d.overall === 'green' ? 'Agora verde!' + tsRefLabel : 'Ainda parcial (score ' + d.score + '/100)' + tsRefLabel, d.overall === 'green' ? 'vit-status-done' : '' );
         if ( d.log ) rowShowLog( row, d.log );

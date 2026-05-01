@@ -229,6 +229,7 @@ function vit_ajax_start_queue() {
     wp_send_json_success( [
         'total'               => $state['total'],
         'first_codes_preview' => array_slice( $state['queue'], 0, 5 ),
+        'rate'                => vit_api_rate_status(),
     ] );
 }
 
@@ -279,6 +280,7 @@ function vit_ajax_process_next() {
         'item'     => $item,
         'progress' => vit_queue_progress( $state ),
         'done'     => $done,
+        'rate'     => vit_api_rate_status(),
     ] );
 }
 
@@ -315,6 +317,7 @@ function vit_ajax_retry() {
         'code'     => $code,
         'item'     => $item,
         'progress' => vit_queue_progress( $state ),
+        'rate'     => vit_api_rate_status(),
     ] );
 }
 

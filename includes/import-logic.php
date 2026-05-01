@@ -103,6 +103,45 @@ function vit_import_property( $api_url, $api_key ) {
  * @param array  $base_data   Opcional — dados já obtidos em /listar para merge.
  * @return array { status, post_id, title, log, field_counters, image_counters }
  */
+
+/**
+ * Conta quantos campos do conjunto conhecido do CRM vieram preenchidos
+ * no payload $data. Usado para determinar paridade CRM ↔ WP na validação.
+ * Para arrays de Sim/Não (Caracteristicas/Infraestrutura/Imediacoes) conta
+ * apenas se houver pelo menos um "Sim", espelhando o que o WP salva.
+ */
+function vit_count_crm_filled( $data ) {
+    $scalar_fields = [
+        'Codigo', 'CodigoCorretor', 'TituloSite', 'DescricaoWeb',
+        'Bairro', 'BairroComercial', 'Cidade', 'UF', 'CEP', 'Endereco',
+        'Numero', 'Complemento', 'Latitude', 'Longitude',
+        'Status', 'Finalidade', 'Categoria', 'Moeda',
+        'Exclusivo', 'Lancamento', 'ExibirNoSite', 'DestaqueWeb',
+        'Dormitorios', 'Suites', 'BanheiroSocialQtd', 'Vagas', 'Closet', 'Hidromassagem', 'Living',
+        'AreaTotal', 'AreaPrivativa', 'AreaTerreno', 'Frente',
+        'ValorVenda', 'ValorLocacao', 'ValorIptu', 'ValorCondominio',
+        'FotoDestaque', 'FotoDestaquePequena',
+    ];
+    $feature_fields = [ 'Caracteristicas', 'InfraEstrutura', 'Imediacoes' ];
+
+    $count = 0;
+    foreach ( $scalar_fields as $f ) {
+        $v = $data[ $f ] ?? null;
+        if ( $v !== null && $v !== '' ) {
+            $count++;
+        }
+    }
+    foreach ( $feature_fields as $f ) {
+        $v = $data[ $f ] ?? null;
+        if ( is_string( $v ) && trim( $v ) !== '' ) {
+            $count++;
+        } elseif ( is_array( $v ) && in_array( 'Sim', $v, true ) ) {
+            $count++;
+        }
+    }
+    return $count;
+}
+
 function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', $finalidade = '', $base_data = [] ) {
     $log = [];
     $log[] = '================ IMPORTAÇÃO (código ' . $code . ') ================';
@@ -176,6 +215,12 @@ function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', 
     $field_counters = [ 'saved' => 0, 'empty' => 0 ];
     vit_update_property_fields( $post_id, $property_data, $log, $field_counters, $field_origins );
     vit_sync_property_taxonomies( $post_id, $property_data, $log );
+
+    // Guarda quantos campos o CRM retornou preenchidos nesta importação.
+    // Usado pela validação para comparar paridade CRM ↔ WP.
+    $crm_filled = vit_count_crm_filled( $property_data );
+    update_post_meta( $post_id, '_vista_crm_filled_count', $crm_filled );
+    $log[] = "[PARIDADE] CRM campos preenchidos: {$crm_filled}";
 
     // ============ FASE 5: imagens ============
     $log[] = '';

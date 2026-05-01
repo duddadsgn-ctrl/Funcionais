@@ -97,7 +97,12 @@
             const t = images.thumbnail ? 'com thumbnail' : 'sem thumbnail';
             return c + ' imagens • ' + t;
         };
-        const completeDetail = () => ( complete.score || 0 ) + '/100';
+        const completeDetail = () => {
+            if ( complete.crm_count ) {
+                return ( complete.wp_count || 0 ) + '/' + complete.crm_count + ' campos CRM (' + ( complete.score || 0 ) + '%)';
+            }
+            return ( complete.score || 0 ) + '/100';
+        };
 
         const canRetry = overall !== 'green';
         const retryBtn = canRetry

@@ -239,34 +239,30 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
     if ( ! empty( $categoria ) )  $cat_arr['Categoria']  = $categoria;
     if ( ! empty( $finalidade ) ) $cat_arr['Finalidade'] = $finalidade;
 
-    // Campos de texto — lista abrangente para capturar absolutamente tudo.
-    // Usar [] (sem filtro) como segundo fallback garante que campos novos no CRM
-    // nunca sejam perdidos.
+    // Campos de texto confirmados disponíveis neste Vista CRM.
+    // Vista retorna HTTP 400 se QUALQUER campo da lista não existir — por isso
+    // esta lista inclui apenas campos validados. O retry automático abaixo remove
+    // dinamicamente qualquer campo que o CRM sinalize como indisponível.
     $text_fields = [
         // Identificação
-        'Codigo', 'CodigoCorretor', 'CodigoCliente',
+        'Codigo', 'CodigoCorretor',
         // Título e descrição
-        'TituloSite', 'Titulo', 'DescricaoWeb', 'Descricao', 'Observacao',
+        'TituloSite', 'DescricaoWeb',
         // Localização
-        'Bairro', 'BairroComercial', 'Cidade', 'CidadeComercial', 'UF',
+        'Bairro', 'BairroComercial', 'Cidade', 'UF',
         'CEP', 'Endereco', 'Numero', 'Complemento', 'Latitude', 'Longitude',
         // Classificação
-        'Status', 'Finalidade', 'Categoria', 'Subcategoria', 'Moeda',
-        'Exclusivo', 'Lancamento', 'ExibirNoSite', 'DestaqueWeb', 'SuperDestaque',
+        'Status', 'Finalidade', 'Categoria', 'Moeda',
+        'Exclusivo', 'Lancamento', 'ExibirNoSite', 'DestaqueWeb',
         // Cômodos e áreas
-        'Dormitorios', 'Suites', 'BanheiroSocialQtd', 'BanheiroSocialDesc',
-        'Vagas', 'SalaStarQtd', 'Closet', 'Hidromassagem', 'Living',
-        'AreaTotal', 'AreaPrivativa', 'AreaUtil', 'AreaTerreno',
-        'Frente', 'Fundo', 'LadoDireito', 'LadoEsquerdo',
-        // Acabamento de piso (por área)
-        'AcabamentoAreaSocial', 'AcabamentoDormitorios',
-        'AcabamentoAreaIntima', 'AcabamentoSalas',
+        'Dormitorios', 'Suites', 'BanheiroSocialQtd',
+        'Vagas', 'Closet', 'Hidromassagem', 'Living',
+        'AreaTotal', 'AreaPrivativa', 'AreaTerreno', 'Frente',
         // Valores
-        'ValorVenda', 'ValorVendaNegociavel', 'ValorLocacao',
-        'ValorIptu', 'ValorCondominio', 'ValorSeguroIncendio',
+        'ValorVenda', 'ValorLocacao', 'ValorIptu', 'ValorCondominio',
         // Fotos de destaque (URLs)
         'FotoDestaque', 'FotoDestaquePequena',
-        // Arrays (Sim/Não ou texto livre)
+        // Arrays
         'Caracteristicas', 'InfraEstrutura', 'Imediacoes',
     ];
 
@@ -280,15 +276,33 @@ function vit_call_detalhes( $base_url, $api_key, $codigo, $categoria, $finalidad
     $log[] = 'Chamada 1/2 (campos texto): ' . wp_json_encode( $text_fields );
     $data_text = vit_raw_get( $url1, $log );
 
+    // Retry automático: se o Vista retornou 400 por campos inválidos, extrai os
+    // nomes deles da mensagem de erro e retenta sem eles. Adapta a qualquer CRM.
     if ( is_wp_error( $data_text ) ) {
-        // Se fields explícito falhar, tenta sem fields (retorna o que vier)
-        $log[] = 'Campos explícitos falharam: ' . $data_text->get_error_message() . ' — tentando sem fields...';
-        $url_empty = add_query_arg( array_merge(
+        $err_msg = $data_text->get_error_message();
+        preg_match_all( '/Campo (\w+) não está disponível/', $err_msg, $m );
+        if ( ! empty( $m[1] ) ) {
+            $invalid      = $m[1];
+            $clean_fields = array_values( array_diff( $text_fields, $invalid ) );
+            $log[] = 'Campos inválidos neste CRM (' . count( $invalid ) . '): ' . implode( ', ', $invalid );
+            $log[] = 'Retentando com ' . count( $clean_fields ) . ' campos válidos...';
+            $url_clean = add_query_arg( array_merge(
+                [ 'key' => $api_key, 'imovel' => $codigo ],
+                $cat_arr,
+                [ 'pesquisa' => wp_json_encode( [ 'fields' => $clean_fields ] ) ]
+            ), $base );
+            $data_text = vit_raw_get( $url_clean, $log );
+        }
+    }
+
+    // Último recurso: sem filtro de campos (API retorna o disponível por padrão)
+    if ( is_wp_error( $data_text ) ) {
+        $log[] = 'Ainda com erro — tentando sem filtro de campos: ' . $data_text->get_error_message();
+        $url_bare = add_query_arg( array_merge(
             [ 'key' => $api_key, 'imovel' => $codigo ],
-            $cat_arr,
-            [ 'pesquisa' => wp_json_encode( [ 'fields' => [] ] ) ]
+            $cat_arr
         ), $base );
-        $data_text = vit_raw_get( $url_empty, $log );
+        $data_text = vit_raw_get( $url_bare, $log );
     }
 
     if ( is_wp_error( $data_text ) ) {

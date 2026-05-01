@@ -216,17 +216,20 @@ function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', 
     vit_update_property_fields( $post_id, $property_data, $log, $field_counters, $field_origins );
     vit_sync_property_taxonomies( $post_id, $property_data, $log );
 
-    // Guarda quantos campos o CRM retornou preenchidos nesta importação.
-    // Usado pela validação para comparar paridade CRM ↔ WP.
-    $crm_filled = vit_count_crm_filled( $property_data );
-    update_post_meta( $post_id, '_vista_crm_filled_count', $crm_filled );
-    $log[] = "[PARIDADE] CRM campos preenchidos: {$crm_filled}";
-
     // ============ FASE 5: imagens ============
     $log[] = '';
     $log[] = '--- FASE 5: processando imagens ---';
     $image_counters = [ 'found' => 0, 'imported' => 0, 'failed' => 0, 'thumbnail_set' => false, 'thumbnail_id' => 0 ];
     vit_process_property_images( $post_id, $property_data, $log, $image_counters );
+
+    // Baseline de paridade: usa o que ficou REALMENTE no WP após salvar tudo.
+    // A validação futura compara este valor com vit_count_wp_filled() — se
+    // o WP perder campos, o imóvel volta a amarelo. Após qualquer re-import
+    // a baseline é atualizada e a validação volta a verde imediatamente.
+    $crm_recebidos = vit_count_crm_filled( $property_data );
+    $wp_salvos     = vit_count_wp_filled( $post_id );
+    update_post_meta( $post_id, '_vista_crm_filled_count', $wp_salvos );
+    $log[] = sprintf( "[PARIDADE] CRM recebidos: %d | WP salvos (nova base): %d", $crm_recebidos, $wp_salvos );
 
     // Marca data/hora da última atualização (campo visível no painel ACF)
     update_post_meta( $post_id, 'data_hora_atualizacao', current_time( 'mysql' ) );

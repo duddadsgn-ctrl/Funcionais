@@ -175,6 +175,7 @@ function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', 
 
     $field_counters = [ 'saved' => 0, 'empty' => 0 ];
     vit_update_property_fields( $post_id, $property_data, $log, $field_counters, $field_origins );
+    vit_sync_property_taxonomies( $post_id, $property_data, $log );
 
     // ============ FASE 5: imagens ============
     $log[] = '';
@@ -706,6 +707,53 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         $log[] = "[EXTRA] API:'{$api_key}' → WP:'{$meta_key}' = \"{$value}\" | OK SALVO";
         $counters['saved']++;
     }
+}
+
+/**
+ * Sincroniza as taxonomias de controle com os campos do CRM:
+ *   visibilidade_imovel  → ExibirNoSite (visivel / oculto)
+ *   destaque_imovel      → Lancamento, DestaqueWeb, SuperDestaque, Exclusivo
+ *   imediacoes_imovel    → Imediacoes (termos dinâmicos)
+ */
+function vit_sync_property_taxonomies( $post_id, $data, &$log ) {
+    // ── visibilidade_imovel ──────────────────────────────────────────────
+    $exibir = strtolower( trim( (string) ( $data['ExibirNoSite'] ?? '' ) ) );
+    if ( $exibir === 'sim' ) {
+        wp_set_object_terms( $post_id, 'visivel', 'visibilidade_imovel' );
+        $log[] = '[TAX] visibilidade_imovel → visivel';
+    } elseif ( $exibir !== '' ) {
+        wp_set_object_terms( $post_id, 'oculto', 'visibilidade_imovel' );
+        $log[] = '[TAX] visibilidade_imovel → oculto';
+    }
+
+    // ── destaque_imovel ──────────────────────────────────────────────────
+    $flag_map = [
+        'lancamento'     => 'Lancamento',
+        'destaque_web'   => 'DestaqueWeb',
+        'super_destaque' => 'SuperDestaque',
+        'exclusivo'      => 'Exclusivo',
+    ];
+    $destaque_terms = [];
+    foreach ( $flag_map as $slug => $api_key ) {
+        $val = strtolower( trim( (string) ( $data[ $api_key ] ?? '' ) ) );
+        if ( $val === 'sim' ) {
+            $destaque_terms[] = $slug;
+        }
+    }
+    wp_set_object_terms( $post_id, $destaque_terms, 'destaque_imovel' );
+    $log[] = '[TAX] destaque_imovel → ' . ( $destaque_terms ? implode( ', ', $destaque_terms ) : '(nenhum)' );
+
+    // ── imediacoes_imovel ────────────────────────────────────────────────
+    $imed = $data['Imediacoes'] ?? null;
+    if ( is_array( $imed ) ) {
+        $imed_terms = array_keys( array_filter( $imed, fn( $v ) => strtolower( trim( (string) $v ) ) === 'sim' ) );
+    } elseif ( is_string( $imed ) && trim( $imed ) !== '' ) {
+        $imed_terms = array_values( array_filter( array_map( 'trim', explode( ',', $imed ) ) ) );
+    } else {
+        $imed_terms = [];
+    }
+    wp_set_object_terms( $post_id, $imed_terms, 'imediacoes_imovel' );
+    $log[] = '[TAX] imediacoes_imovel → ' . ( $imed_terms ? implode( ', ', $imed_terms ) : '(nenhuma)' );
 }
 
 /**

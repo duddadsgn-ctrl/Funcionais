@@ -29,9 +29,12 @@ function vit_get_all_wp_properties() {
             continue;
         }
         $result[ (string) $code ] = [
-            'code'    => (string) $code,
-            'post_id' => (int) $post_id,
-            'title'   => get_the_title( $post_id ),
+            'code'      => (string) $code,
+            'post_id'   => (int) $post_id,
+            'title'     => get_the_title( $post_id ),
+            'wp_status' => (string) get_post_meta( $post_id, 'status',    true ),
+            'categoria' => (string) get_post_meta( $post_id, 'categoria', true ),
+            'cidade'    => (string) get_post_meta( $post_id, 'cidade',    true ),
         ];
     }
     return $result;
@@ -111,12 +114,24 @@ function vit_ajax_sync_scan() {
     }
     $crm_active = array_flip( $fetched['codes'] );
 
+    // Guarda contra lista vazia: se o CRM não retornou nenhum imóvel ativo, a API provavelmente falhou.
+    // Sem este guarda, TODOS os imóveis do WP apareceriam como "desativados".
+    if ( empty( $crm_active ) ) {
+        wp_send_json_error( [
+            'msg' => 'O CRM retornou 0 imóveis ativos. Verifique a conectividade e a API Key — a varredura foi cancelada para evitar remoções indevidas.',
+        ] );
+    }
+
     // Imóveis no WP
     $wp_props = vit_get_all_wp_properties();
 
-    $novos    = [];
-    $removidos = [];
-    $amarelos  = [];
+    $novos      = [];
+    $removidos  = [];   // fora do CRM + status Suspenso/Oculto/Inativo → recomendar remoção
+    $fora_crm   = [];   // fora do CRM mas status ativo no WP → apenas aviso
+    $amarelos   = [];
+
+    // Statuses que indicam imóvel explicitamente inativo/suspenso no CRM Vista
+    $status_remover = [ 'Suspenso', 'Oculto', 'Inativo' ];
 
     foreach ( $crm_active as $code => $_ ) {
         if ( ! isset( $wp_props[ $code ] ) ) {
@@ -138,14 +153,22 @@ function vit_ajax_sync_scan() {
     }
 
     foreach ( $wp_props as $code => $prop ) {
-        if ( ! isset( $crm_active[ $code ] ) ) {
+        if ( isset( $crm_active[ $code ] ) ) {
+            continue;
+        }
+        $wp_status = $prop['wp_status'] ?? '';
+        if ( in_array( $wp_status, $status_remover, true ) ) {
             $removidos[] = $prop;
+        } else {
+            // Status ativo (Venda, Locação, etc.) mas ausente do CRM → aviso, sem remoção automática
+            $fora_crm[] = $prop;
         }
     }
 
     $plan = [
         'novos'          => $novos,
         'removidos'      => $removidos,
+        'fora_crm'       => $fora_crm,
         'amarelos'       => $amarelos,
         'crm_active_map' => array_keys( $crm_active ),
         'scanned_at'     => time(),
@@ -158,10 +181,12 @@ function vit_ajax_sync_scan() {
         'counts' => [
             'novos'     => count( $novos ),
             'removidos' => count( $removidos ),
+            'fora_crm'  => count( $fora_crm ),
             'amarelos'  => count( $amarelos ),
         ],
         'novos'    => $novos,
         'removidos' => $removidos,
+        'fora_crm' => $fora_crm,
         'amarelos' => $amarelos,
     ] );
 }

@@ -151,6 +151,7 @@ function vit_admin_page_html() {
 
             <div id="vit-sync-novos"    class="vit-sync-section" style="display:none;"></div>
             <div id="vit-sync-removidos" class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-fora-crm"  class="vit-sync-section" style="display:none;"></div>
             <div id="vit-sync-amarelos" class="vit-sync-section" style="display:none;"></div>
         </div>
 

@@ -95,9 +95,10 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
             if ( $codigo === '' ) {
                 continue;
             }
-            // Apenas imóveis ativos entram na fila
+            // Exclui apenas statuses explicitamente inativos; Venda, Locação, Ativo etc. são todos "ativos"
             $status = strtolower( trim( (string) ( $value['Status'] ?? '' ) ) );
-            if ( $status !== 'ativo' ) {
+            $inativos = [ 'suspenso', 'oculto', 'inativo', 'vendido', 'locado' ];
+            if ( in_array( $status, $inativos, true ) ) {
                 continue;
             }
             if ( isset( $meta_by_code[ $codigo ] ) ) {

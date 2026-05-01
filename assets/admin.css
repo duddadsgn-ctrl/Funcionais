@@ -222,6 +222,24 @@
     margin-top: 8px;
 }
 
+/* Badges de status e meta nas linhas de sync */
+.vit-sync-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+.vit-sync-badge-red    { background: #f8d7da; color: #842029; }
+.vit-sync-badge-yellow { background: #fff3cd; color: #664d03; }
+.vit-sync-badge-green  { background: #d1e7dd; color: #0a3622; }
+.vit-sync-meta {
+    font-size: 11px;
+    color: #646970;
+    white-space: nowrap;
+}
+
 /* Log expandível após cada linha de sync */
 .vit-sync-row-log {
     margin: 0;

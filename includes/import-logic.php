@@ -183,6 +183,9 @@ function vit_import_single_by_code( $api_url, $api_key, $code, $categoria = '', 
     $image_counters = [ 'found' => 0, 'imported' => 0, 'failed' => 0, 'thumbnail_set' => false, 'thumbnail_id' => 0 ];
     vit_process_property_images( $post_id, $property_data, $log, $image_counters );
 
+    // Marca data/hora da última atualização (campo visível no painel ACF)
+    update_post_meta( $post_id, 'data_hora_atualizacao', current_time( 'mysql' ) );
+
     // ============ RESUMO ============
     $log[] = '';
     $log[] = '========== RESUMO ==========';
@@ -542,21 +545,21 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
 
     // Mapa completo: meta_key WP => nome do campo na API Vista.
     // Cobre absolutamente todos os campos escalares conhecidos do Vista CRM.
+    // Mapa WP meta_key → nome do campo na API Vista.
+    // Contém apenas campos confirmados disponíveis nesta instalação do CRM
+    // (alinhado com $text_fields em vit_call_detalhes).
     $map = [
         // Identificação
         '_vista_codigo'        => 'Codigo',
         'codigo'               => 'Codigo',
         'codigo_corretor'      => 'CodigoCorretor',
-        'codigo_cliente'       => 'CodigoCliente',
         // Textos
         'titulo_site'          => 'TituloSite',
         'descricao_web'        => 'DescricaoWeb',
-        'observacao'           => 'Observacao',
         // Localização
         'bairro'               => 'Bairro',
         'bairro_comercial'     => 'BairroComercial',
         'cidade'               => 'Cidade',
-        'cidade_comercial'     => 'CidadeComercial',
         'uf'                   => 'UF',
         'cep'                  => 'CEP',
         'endereco'             => 'Endereco',
@@ -568,41 +571,26 @@ function vit_update_property_fields( $post_id, $data, &$log, &$counters, $field_
         'status'               => 'Status',
         'finalidade'           => 'Finalidade',
         'categoria'            => 'Categoria',
-        'subcategoria'         => 'Subcategoria',
         'moeda'                => 'Moeda',
         'exclusivo'            => 'Exclusivo',
         'lancamento'           => 'Lancamento',
         'exibir_no_site'       => 'ExibirNoSite',
         'destaque_web'         => 'DestaqueWeb',
-        'super_destaque'       => 'SuperDestaque',
         // Cômodos e áreas
         'dormitorios'          => 'Dormitorios',
         'suites'               => 'Suites',
         'banheiros'            => 'BanheiroSocialQtd',
-        'banheiro_desc'        => 'BanheiroSocialDesc',
         'vagas'                => 'Vagas',
-        'sala_star_qtd'        => 'SalaStarQtd',
         'closet'               => 'Closet',
         'hidromassagem'        => 'Hidromassagem',
         'living'               => 'Living',
         'area_total'           => 'AreaTotal',
         'area_privativa'       => 'AreaPrivativa',
-        'area_util'            => 'AreaUtil',
         'area_terreno'         => 'AreaTerreno',
         'frente'               => 'Frente',
-        'fundo'                => 'Fundo',
-        'lado_direito'         => 'LadoDireito',
-        'lado_esquerdo'        => 'LadoEsquerdo',
-        // Acabamento de piso (por área)
-        'acabamento_social'    => 'AcabamentoAreaSocial',
-        'acabamento_dorms'     => 'AcabamentoDormitorios',
-        'acabamento_intimo'    => 'AcabamentoAreaIntima',
-        'acabamento_salas'     => 'AcabamentoSalas',
         // Fotos de destaque
         'foto_destaque'        => 'FotoDestaque',
         'foto_destaque_peq'    => 'FotoDestaquePequena',
-        // Valores brutos (monetários são processados em bloco separado)
-        'valor_seguro'         => 'ValorSeguroIncendio',
     ];
 
     foreach ( $map as $meta_key => $api_key ) {

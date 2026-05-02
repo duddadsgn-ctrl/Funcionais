@@ -340,13 +340,34 @@ function vit_ajax_get_state() {
         wp_send_json_success( [ 'initialized' => false ] );
     }
 
+    // Remove do estado quaisquer entradas cujo post foi apagado do WP.
+    $imports = [];
+    $changed = false;
+    foreach ( (array) ( $state['imports'] ?? [] ) as $code => $item ) {
+        $pid = (int) ( $item['post_id'] ?? 0 );
+        if ( $pid && ! get_post( $pid ) ) {
+            // Post deletado: remove do estado persistido
+            $overall = $item['overall'] ?? '';
+            if ( $overall && isset( $state['counts'][ $overall ] ) ) {
+                $state['counts'][ $overall ] = max( 0, $state['counts'][ $overall ] - 1 );
+            }
+            unset( $state['imports'][ $code ] );
+            $changed = true;
+            continue;
+        }
+        $imports[] = $item;
+    }
+    if ( $changed ) {
+        vit_queue_save( $state );
+    }
+
     wp_send_json_success( [
         'initialized' => true,
         'running'     => ! empty( $state['running'] ),
         'finished_at' => (int) ( $state['finished_at'] ?? 0 ),
         'started_at'  => (int) ( $state['started_at'] ?? 0 ),
         'progress'    => vit_queue_progress( $state ),
-        'imports'     => array_values( $state['imports'] ?? [] ),
+        'imports'     => $imports,
     ] );
 }
 

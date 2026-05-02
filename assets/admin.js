@@ -447,6 +447,7 @@
                 '<span class="vit-code">#' + esc( item.code ) + '</span>' +
                 metaHtml( item ) +
                 '<span class="vit-sync-row-status">Ausente do CRM — verificar manualmente</span>' +
+                '<button type="button" class="button vit-sync-delete" data-post-id="' + esc( item.post_id ) + '" data-code="' + esc( item.code ) + '">Remover do WP</button>' +
             '</div>'
         );
     }
@@ -594,7 +595,7 @@
 
         renderSyncSection( secNovos,       'Imóveis novos no CRM (não importados)',                       d.novos,              rowNovo,           'import_new', 'Importar todos os novos' );
         renderSyncSection( secDesativados, 'Desativados no CRM — remover do WordPress (decisão humana)',  d.desativados_crm,    rowDesativadoCrm,  'delete',     'Remover todos desativados' );
-        renderSyncSection( secForaCrm,     'Ausentes do CRM — verificar manualmente',                    d.fora_crm || [],     rowForaCrm,        '',           '' );
+        renderSyncSection( secForaCrm,     'Ausentes do CRM — verificar manualmente (sem código no CRM)', d.fora_crm || [],     rowForaCrm,        'delete_fora','Remover todos ausentes' );
         renderSyncSection( secAmar,        'Imóveis parciais (amarelos) — pente fino',                   d.amarelos,           rowAmarelo,        'refresh',    'Completar todos os amarelos' );
     }
 
@@ -620,9 +621,10 @@
             e.preventDefault();
             const action = t.getAttribute( 'data-action' );
             t.disabled = true;
-            if ( action === 'import_new' ) await execAll( secNovos,       'vit-sync-import-new', syncImportNew );
-            if ( action === 'delete' )     await execAll( secDesativados, 'vit-sync-delete',     syncDelete );
-            if ( action === 'refresh' )    await execAll( secAmar,        'vit-sync-refresh',    syncRefresh );
+            if ( action === 'import_new' )  await execAll( secNovos,       'vit-sync-import-new', syncImportNew );
+            if ( action === 'delete' )      await execAll( secDesativados, 'vit-sync-delete',     syncDelete );
+            if ( action === 'delete_fora' ) await execAll( secForaCrm,     'vit-sync-delete',     syncDelete );
+            if ( action === 'refresh' )     await execAll( secAmar,        'vit-sync-refresh',    syncRefresh );
             t.disabled = false;
         }
     } );

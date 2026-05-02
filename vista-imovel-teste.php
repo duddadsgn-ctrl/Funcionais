@@ -1,10 +1,10 @@
 <?php
 /**
- * Plugin Name:       Vista Imóvel Teste
- * Plugin URI:        https://example.com/
- * Description:       Um plugin simples para testar a importação de 1 imóvel da API Vista.
+ * Plugin Name:       ImobFlow
+ * Plugin URI:        anuvedigital.com.br
+ * Description:       Plugin para WordPress que integra seu CRM imobiliário e importa automaticamente imóveis para o seu site. Mantenha sua vitrine sempre atualizada, com fotos, descrições, valores e status sincronizados em tempo real, sem trabalho manual.
  * Version:           1.0.0
- * Author:            Seu Nome
+ * Author:            Anuve
  * Author URI:        https://example.com/
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html

@@ -84,7 +84,7 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
             $total = (int) $resp['paginacao']['total'];
         }
 
-        $added = 0;
+        $items_on_page = 0;
         foreach ( $resp as $key => $value ) {
             if ( in_array( $key, [ 'paginacao', 'total', 'pagina', 'quantidade' ], true ) ) {
                 continue;
@@ -94,15 +94,16 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
             }
             $codigo     = isset( $value['Codigo'] ) ? (string) $value['Codigo'] : '';
             $status_raw = trim( (string) ( $value['Status'] ?? '' ) );
-            $status     = strtolower( $status_raw );
+            // mb_strtolower handles UTF-8 chars like "Locação" / "Locado" correctly
+            $status     = function_exists( 'mb_strtolower' ) ? mb_strtolower( $status_raw, 'UTF-8' ) : strtolower( $status_raw );
             if ( $codigo === '' ) {
                 continue;
             }
-            // Statuses ativos no Vista CRM (qualquer outro é inativo/desativado)
-            $ativos = [ 'venda', 'locação', 'locacao', 'venda e locação', 'venda e locacao',
-                        'aluguel', 'venda e aluguel', 'ativo' ];
-            if ( ! in_array( $status, $ativos, true ) ) {
-                // Guarda o status real do CRM para exibir na varredura
+            $items_on_page++;
+            // Exclusion list — statuses known to mean inactive/removed in Vista CRM.
+            // Using exclusion (not whitelist) so unknown future statuses default to active.
+            $inativos = [ 'suspenso', 'oculto', 'inativo', 'vendido', 'locado', 'alugado', 'cancelado' ];
+            if ( in_array( $status, $inativos, true ) ) {
                 if ( ! isset( $inactive_by_code[ $codigo ] ) ) {
                     $inactive_by_code[ $codigo ] = $status_raw ?: 'Inativo';
                 }
@@ -116,10 +117,11 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
                 'Finalidade' => isset( $value['Finalidade'] ) ? (string) $value['Finalidade'] : '',
             ];
             $codes[] = $codigo;
-            $added++;
         }
 
-        if ( $added === 0 ) {
+        // Break only when the API returned zero property items (end of pagination).
+        // Do NOT break on zero active items — a page may contain only inactive ones.
+        if ( $items_on_page === 0 ) {
             break;
         }
         if ( $total > 0 && count( $codes ) >= $total ) {

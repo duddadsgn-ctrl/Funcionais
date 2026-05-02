@@ -96,6 +96,7 @@ function vit_delete_property_fully( $post_id ) {
  *   amarelos  = estão nos dois lados mas overall != green
  */
 function vit_ajax_sync_scan() {
+    @set_time_limit( 300 );
     check_ajax_referer( 'vit_bulk_nonce', 'nonce' );
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( [ 'msg' => 'sem permissão' ], 403 );

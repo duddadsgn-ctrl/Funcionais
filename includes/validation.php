@@ -56,11 +56,16 @@ function vit_wp_field_map() {
 
 /**
  * Conta quantos dos 41 campos mapeados estão preenchidos no WP.
+ * Usa uma única chamada get_post_meta() para buscar todos os metas de uma vez.
  */
 function vit_count_wp_filled( $post_id ) {
-    $count = 0;
+    $all_meta = get_post_meta( (int) $post_id );  // single DB round-trip
+    $count    = 0;
     foreach ( array_keys( vit_wp_field_map() ) as $meta_key ) {
-        $v = get_post_meta( $post_id, $meta_key, true );
+        if ( ! isset( $all_meta[ $meta_key ] ) ) {
+            continue;
+        }
+        $v = $all_meta[ $meta_key ][0] ?? '';
         if ( $v !== '' && $v !== null && $v !== false ) {
             $count++;
         }

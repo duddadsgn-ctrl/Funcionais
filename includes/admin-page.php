@@ -4,13 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 function vit_add_admin_menu() {
+    $icon = 'data:image/svg+xml;base64,' . base64_encode(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">' .
+        '<circle cx="3.5" cy="14" r="2" fill="black"/>' .
+        '<path d="M3.5 14 Q10 1 16.5 14" stroke="black" stroke-width="1.8" fill="none" stroke-linecap="round"/>' .
+        '<circle cx="16.5" cy="14" r="2" fill="black"/>' .
+        '</svg>'
+    );
     add_menu_page(
-        'Vista Teste 1 Imóvel',
-        'Vista Teste 1 Imóvel',
+        'ImobFlow',
+        'ImobFlow',
         'manage_options',
         'vista-imovel-teste',
         'vit_admin_page_html',
-        'dashicons-rest-api',
+        $icon,
         20
     );
 }
@@ -20,7 +27,7 @@ function vit_admin_page_html() {
     <div class="wrap">
         <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
         <p>
-            O plugin vai buscar automaticamente um imóvel ativo e bem preenchido no seu CRM e importá-lo.<br>
+            Importa e sincroniza imóveis do Vista CRM para o WordPress, com validação de completude e atualização automática diária.<br>
             Nenhum código, categoria ou finalidade precisam ser informados.
         </p>
 

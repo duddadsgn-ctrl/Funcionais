@@ -4,13 +4,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 function vit_add_admin_menu() {
+    $icon = 'data:image/svg+xml;base64,' . base64_encode(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">' .
+        '<circle cx="3.5" cy="14" r="2" fill="black"/>' .
+        '<path d="M3.5 14 Q10 1 16.5 14" stroke="black" stroke-width="1.8" fill="none" stroke-linecap="round"/>' .
+        '<circle cx="16.5" cy="14" r="2" fill="black"/>' .
+        '</svg>'
+    );
     add_menu_page(
-        'Vista Teste 1 Imóvel',
-        'Vista Teste 1 Imóvel',
+        'ImobFlow',
+        'ImobFlow',
         'manage_options',
         'vista-imovel-teste',
         'vit_admin_page_html',
-        'dashicons-rest-api',
+        $icon,
         20
     );
 }
@@ -20,9 +27,84 @@ function vit_admin_page_html() {
     <div class="wrap">
         <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
         <p>
-            O plugin vai buscar automaticamente um imóvel ativo e bem preenchido no seu CRM e importá-lo.<br>
+            Importa e sincroniza imóveis do Vista CRM para o WordPress, com validação de completude e atualização automática diária.<br>
             Nenhum código, categoria ou finalidade precisam ser informados.
         </p>
+
+        <?php
+        // ── Monitor de Conexão ─────────────────────────────────────────────
+        $mon     = get_option( 'vit_connection_status', null );
+        $next_ts = wp_next_scheduled( 'vit_hourly_connection_check' );
+        $next_str = $next_ts
+            ? human_time_diff( time(), $next_ts ) . ' (às ' . wp_date( 'H:i', $next_ts ) . ')'
+            : 'não agendado';
+
+        if ( $mon ) {
+            $mon_class = match( $mon['status'] ?? 'error' ) {
+                'ok'    => 'notice-success',
+                default => 'notice-error',
+            };
+            echo '<div class="notice ' . esc_attr( $mon_class ) . '">';
+            echo '<h3>Monitor de Conexão <span style="font-size:12px;font-weight:normal;color:#555;">— verificação automática a cada 1h</span></h3>';
+            echo '<ul style="font-family:monospace;font-size:13px;line-height:1.8;">';
+            foreach ( $mon['log'] as $line ) {
+                $color = '';
+                if ( str_starts_with( $line, '[OK]' ) )    $color = 'color:#1a7a1a;font-weight:bold;';
+                if ( str_starts_with( $line, '[FALHA]' ) ) $color = 'color:#b22222;font-weight:bold;';
+                if ( str_starts_with( $line, '>>' ) )      $color = 'color:#0050b3;font-weight:bold;';
+                echo '<li style="' . esc_attr( $color ) . '">' . esc_html( $line ) . '</li>';
+            }
+            echo '</ul>';
+            echo '<p style="font-size:12px;color:#555;margin:4px 0 10px;">Próxima verificação automática: <strong>' . esc_html( $next_str ) . '</strong></p>';
+            echo '</div>';
+        } else {
+            echo '<div class="notice notice-info"><p><strong>Monitor de Conexão</strong> — Nenhuma verificação realizada ainda. Clique em "Verificar Agora".</p></div>';
+        }
+        ?>
+
+        <form action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" method="post" style="margin-bottom:20px;">
+            <input type="hidden" name="action" value="vit_manual_check">
+            <input type="hidden" name="vit_api_url" value="<?php echo esc_attr( get_option( 'vit_api_url', 'https://cli41034-rest.vistahost.com.br' ) ); ?>">
+            <?php wp_nonce_field( 'vit_manual_check_action', 'vit_manual_check_nonce' ); ?>
+            <button type="submit" class="button button-primary">Verificar Agora</button>
+            <span style="font-size:12px;color:#888;margin-left:8px;">Próxima automática: <?php echo esc_html( $next_str ); ?></span>
+        </form>
+        <hr>
+
+        <?php
+        // ── Notificação da varredura automática diária ─────────────────────
+        $daily = get_option( VIT_DAILY_SCAN_RESULT_OPT, null );
+        if ( $daily ) {
+            $age_h = $daily['scanned_at'] ? round( ( time() - $daily['scanned_at'] ) / 3600, 1 ) : 0;
+            if ( $age_h <= 48 ) {
+                $scan_time = $daily['scanned_at'] ? wp_date( 'd/m H:i', $daily['scanned_at'] ) : '—';
+                if ( $daily['status'] === 'error' ) {
+                    echo '<div class="notice notice-error is-dismissible"><p>';
+                    echo '<strong>Varredura automática (' . esc_html( $scan_time ) . '):</strong> ';
+                    echo 'Falhou — ' . esc_html( $daily['msg'] ?? 'erro desconhecido' );
+                    echo '</p></div>';
+                } elseif ( $daily['status'] === 'changes' ) {
+                    $c = $daily['counts'] ?? [];
+                    $parts = [];
+                    if ( ! empty( $c['novos'] ) )       $parts[] = '<strong>' . (int) $c['novos']       . ' novos</strong>';
+                    if ( ! empty( $c['desativados'] ) )  $parts[] = '<strong>' . (int) $c['desativados'] . ' desativados no CRM</strong>';
+                    if ( ! empty( $c['atualizados'] ) )  $parts[] = '<strong>' . (int) $c['atualizados'] . ' atualizados no CRM</strong>';
+                    if ( ! empty( $c['ausentes'] ) )     $parts[] = '<strong>' . (int) $c['ausentes']    . ' ausentes do CRM</strong>';
+                    if ( ! empty( $c['amarelos'] ) )     $parts[] = '<strong>' . (int) $c['amarelos']    . ' parciais</strong>';
+                    echo '<div class="notice notice-warning is-dismissible">';
+                    echo '<p><strong>Varredura automática (' . esc_html( $scan_time ) . '):</strong> ';
+                    echo implode( ' | ', $parts );
+                    echo '. <a href="#vit-sync">Clique em "Varrer CRM" para ver detalhes e agir.</a></p>';
+                    echo '</div>';
+                }
+            }
+        }
+        // Próxima varredura automática
+        $next_scan_ts  = wp_next_scheduled( 'vit_daily_sync_scan' );
+        $next_scan_str = $next_scan_ts
+            ? human_time_diff( time(), $next_scan_ts ) . ' (às ' . wp_date( 'H:i', $next_scan_ts ) . ')'
+            : 'não agendada';
+        ?>
 
         <?php
         $report = get_transient( 'vit_import_report' );
@@ -68,6 +150,61 @@ function vit_admin_page_html() {
 
             <?php submit_button( 'Importar 1 imóvel de teste' ); ?>
         </form>
+
+        <div id="vit-rate-counter" style="display:none;">
+            <span id="vit-rate-label">0/290 req/min</span>
+            <div class="vit-rate-track"><div id="vit-rate-fill" class="green"></div></div>
+            <span id="vit-rate-reset">renova em —s</span>
+            <span id="vit-rate-state"></span>
+        </div>
+
+        <div id="vit-bulk">
+            <h2>Importação em Lote — Validador de Imóveis</h2>
+            <p style="color:#50575e;font-size:13px;margin-top:-6px;">
+                Cada imóvel é importado e verificado individualmente. Clique no nome
+                para ver os três checks: informações, imagens e completude. Itens
+                amarelos/vermelhos podem ser reimportados pelo botão <em>Tentar atualizar</em>.
+            </p>
+
+            <div class="vit-bulk-controls">
+                <button type="button" id="vit-start" class="button button-primary">Iniciar Importação Completa</button>
+                <button type="button" id="vit-retry-all-yellow" class="button" style="display:none;">Atualizar todos os amarelos (0)</button>
+            </div>
+
+            <div class="vit-progress">
+                <div>
+                    <strong><span id="vit-count-done">0</span> / <span id="vit-count-total">0</span></strong> imóveis
+                    <span class="vit-chip green"  title="Completos">Verde: <span id="vit-count-green">0</span></span>
+                    <span class="vit-chip yellow" title="Parciais">Amarelo: <span id="vit-count-yellow">0</span></span>
+                    <span class="vit-chip red"    title="Falhou">Vermelho: <span id="vit-count-red">0</span></span>
+                </div>
+                <div class="vit-bar"><div id="vit-bar-fill"></div></div>
+            </div>
+
+            <div id="vit-status-line" class="vit-status"></div>
+
+            <div id="vit-list"></div>
+        </div>
+
+        <div id="vit-sync">
+            <h2>Atualização Geral</h2>
+            <p style="color:#50575e;font-size:13px;margin-top:-6px;">
+                Compara o CRM com o WordPress: detecta imóveis novos, desativados, atualizados no CRM e
+                imóveis parciais (amarelos), buscando todos os campos faltantes diretamente na API pelo código.
+                Próxima varredura automática: <strong><?php echo esc_html( $next_scan_str ); ?></strong>.
+            </p>
+            <div class="vit-sync-controls">
+                <button type="button" id="vit-sync-scan" class="button button-primary">Varrer CRM</button>
+            </div>
+            <div id="vit-sync-status" class="vit-status"></div>
+
+            <div id="vit-sync-novos"        class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-desativados"  class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-fora-crm"     class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-atualizados"  class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-amarelos"     class="vit-sync-section" style="display:none;"></div>
+        </div>
+
     </div>
     <?php
 }

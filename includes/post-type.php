@@ -45,4 +45,57 @@ function vit_register_imoveis_post_type() {
     );
 
     register_post_type( 'imoveis', $args );
+
+    // ── Taxonomias de controle ────────────────────────────────────────────
+
+    // visibilidade_imovel: visivel | oculto  (driven by ExibirNoSite)
+    if ( ! taxonomy_exists( 'visibilidade_imovel' ) ) {
+        register_taxonomy( 'visibilidade_imovel', 'imoveis', [
+            'label'             => 'Visibilidade',
+            'public'            => false,
+            'show_ui'           => true,
+            'show_admin_column' => true,
+            'hierarchical'      => false,
+            'rewrite'           => false,
+        ] );
+        foreach ( [ [ 'Visível', 'visivel' ], [ 'Oculto', 'oculto' ] ] as [ $name, $slug ] ) {
+            if ( ! term_exists( $slug, 'visibilidade_imovel' ) ) {
+                wp_insert_term( $name, 'visibilidade_imovel', [ 'slug' => $slug ] );
+            }
+        }
+    }
+
+    // destaque_imovel: lancamento | destaque_web | super_destaque | exclusivo  (driven by CRM flags)
+    if ( ! taxonomy_exists( 'destaque_imovel' ) ) {
+        register_taxonomy( 'destaque_imovel', 'imoveis', [
+            'label'             => 'Destaque',
+            'public'            => true,
+            'show_ui'           => true,
+            'show_admin_column' => true,
+            'hierarchical'      => false,
+            'rewrite'           => [ 'slug' => 'destaque-imovel' ],
+        ] );
+        foreach ( [
+            [ 'Lançamento',   'lancamento'    ],
+            [ 'Destaque Web', 'destaque_web'  ],
+            [ 'Super Destaque', 'super_destaque' ],
+            [ 'Exclusivo',    'exclusivo'     ],
+        ] as [ $name, $slug ] ) {
+            if ( ! term_exists( $slug, 'destaque_imovel' ) ) {
+                wp_insert_term( $name, 'destaque_imovel', [ 'slug' => $slug ] );
+            }
+        }
+    }
+
+    // imediacoes_imovel: termos dinâmicos por imediação (Serra, Costa Verde, …)
+    if ( ! taxonomy_exists( 'imediacoes_imovel' ) ) {
+        register_taxonomy( 'imediacoes_imovel', 'imoveis', [
+            'label'             => 'Imediações',
+            'public'            => true,
+            'show_ui'           => true,
+            'show_admin_column' => false,
+            'hierarchical'      => false,
+            'rewrite'           => [ 'slug' => 'imediacao' ],
+        ] );
+    }
 }

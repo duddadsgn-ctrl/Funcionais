@@ -1,0 +1,336 @@
+/* ── Contador de Rate Limit da API ───────────────────────────────────────── */
+
+#vit-rate-counter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: #f0f6fc;
+    border: 1px solid #c3d9ef;
+    border-radius: 4px;
+    margin-top: 16px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+#vit-rate-counter.vit-rate-paused {
+    background: #fff3cd;
+    border-color: #f0c300;
+}
+.vit-rate-track {
+    flex: 1;
+    min-width: 100px;
+    height: 7px;
+    background: #dde;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.vit-rate-track > div {
+    height: 100%;
+    width: 0;
+    transition: width .4s ease;
+    border-radius: 4px;
+}
+.vit-rate-track > div.green  { background: #46b450; }
+.vit-rate-track > div.yellow { background: #ffb900; }
+.vit-rate-track > div.red    { background: #dc3232; }
+#vit-rate-label {
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 110px;
+    font-variant-numeric: tabular-nums;
+}
+#vit-rate-reset {
+    font-size: 11px;
+    color: #646970;
+    white-space: nowrap;
+}
+#vit-rate-state {
+    font-size: 12px;
+    font-weight: bold;
+    color: #0050b3;
+    white-space: nowrap;
+}
+.vit-rate-paused #vit-rate-state { color: #664d03; }
+
+/* ── Importação em Lote ──────────────────────────────────────────────────── */
+
+#vit-bulk {
+    background: #fff;
+    padding: 16px 20px;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+#vit-bulk h2 {
+    margin-top: 0;
+}
+
+.vit-bulk-controls {
+    margin-bottom: 12px;
+}
+
+.vit-progress {
+    background: #f6f7f7;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+.vit-progress .vit-chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-weight: bold;
+    color: #fff;
+    font-size: 12px;
+}
+.vit-chip.green  { background: #46b450; }
+.vit-chip.yellow { background: #ffb900; color: #1d2327; }
+.vit-chip.red    { background: #dc3232; }
+
+.vit-bar {
+    flex: 1 1 100%;
+    height: 10px;
+    background: #e5e5e5;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.vit-bar > div {
+    height: 100%;
+    background: #2271b1;
+    width: 0;
+    transition: width .25s ease;
+}
+
+.vit-status {
+    margin: 6px 0 12px;
+    font-size: 13px;
+    color: #50575e;
+    min-height: 18px;
+}
+.vit-status-error { color: #dc3232; font-weight: bold; }
+.vit-status-done  { color: #1a7a1a; font-weight: bold; }
+
+#vit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vit-item {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-left-width: 4px;
+    border-radius: 3px;
+    padding: 0;
+}
+.vit-item[open] {
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.vit-item-green  { border-left-color: #46b450; }
+.vit-item-yellow { border-left-color: #ffb900; }
+.vit-item-red    { border-left-color: #dc3232; }
+
+.vit-item > summary {
+    cursor: pointer;
+    padding: 10px 14px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    user-select: none;
+}
+.vit-item > summary::-webkit-details-marker { display: none; }
+.vit-item > summary::before {
+    content: "\25B8";
+    color: #646970;
+    display: inline-block;
+    transition: transform .15s ease;
+}
+.vit-item[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.vit-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-weight: bold;
+    color: #fff;
+    font-size: 12px;
+    min-width: 70px;
+    text-align: center;
+}
+.vit-badge-green  { background: #46b450; }
+.vit-badge-yellow { background: #ffb900; color: #1d2327; }
+.vit-badge-red    { background: #dc3232; }
+
+.vit-title {
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vit-code {
+    color: #646970;
+    font-family: monospace;
+    font-size: 12px;
+}
+.vit-updated {
+    font-size: 11px;
+    color: #8c8f94;
+    white-space: nowrap;
+}
+
+.vit-checks {
+    padding: 4px 16px 12px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+.vit-check {
+    line-height: 1.5;
+}
+.vit-check-status {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+    margin-left: 4px;
+}
+.vit-check-ok      .vit-check-status { background: #46b450; }
+.vit-check-partial .vit-check-status { background: #ffb900; color: #1d2327; }
+.vit-check-fail    .vit-check-status { background: #dc3232; }
+
+.vit-actions {
+    padding: 0 16px 14px 30px;
+    display: flex;
+    gap: 8px;
+}
+
+/* ── Atualização Geral (Sync) ─────────────────────────────────────────── */
+
+#vit-sync {
+    background: #fff;
+    padding: 16px 20px;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+#vit-sync h2 {
+    margin-top: 0;
+}
+.vit-sync-controls {
+    margin-bottom: 10px;
+}
+
+.vit-sync-section {
+    margin-top: 18px;
+    border-top: 1px solid #e5e5e5;
+    padding-top: 12px;
+}
+.vit-sync-section-inner h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+.vit-sync-count {
+    font-weight: normal;
+    color: #646970;
+}
+.vit-sync-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.vit-sync-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    background: #f6f7f7;
+    border: 1px solid #e5e5e5;
+    border-radius: 3px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+.vit-sync-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.vit-sync-row-status {
+    font-size: 12px;
+    color: #50575e;
+    min-width: 120px;
+}
+.vit-sync-row-status.vit-status-done  { color: #1a7a1a; font-weight: bold; }
+.vit-sync-row-status.vit-status-error { color: #dc3232; font-weight: bold; }
+
+.vit-sync-exec {
+    margin-top: 8px;
+}
+
+/* Badges de status e meta nas linhas de sync */
+.vit-sync-status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+.vit-sync-badge-red    { background: #f8d7da; color: #842029; }
+.vit-sync-badge-yellow { background: #fff3cd; color: #664d03; }
+.vit-sync-badge-green  { background: #d1e7dd; color: #0a3622; }
+.vit-sync-badge-blue   { background: #cfe2ff; color: #0a367a; }
+.vit-sync-meta {
+    font-size: 11px;
+    color: #646970;
+    white-space: nowrap;
+}
+
+/* Log expandível após cada linha de sync */
+.vit-sync-row-log {
+    margin: 0;
+    border: 1px solid #dcdcde;
+    border-top: none;
+    border-radius: 0 0 3px 3px;
+    background: #f0f0f1;
+    font-size: 12px;
+}
+.vit-sync-row-log > summary {
+    cursor: pointer;
+    padding: 4px 10px;
+    color: #50575e;
+    user-select: none;
+    list-style: none;
+}
+.vit-sync-row-log > summary::-webkit-details-marker { display: none; }
+.vit-sync-row-log > summary::before { content: "\25B8"; margin-right: 4px; }
+.vit-sync-row-log[open] > summary::before { content: "\25BE"; }
+.vit-sync-log-pre {
+    margin: 0;
+    padding: 8px 10px 10px;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid #dcdcde;
+    background: #fff;
+}

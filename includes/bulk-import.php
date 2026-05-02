@@ -69,7 +69,7 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
     while ( true ) {
         // Inclui Status para filtrar apenas imóveis ativos
         $params = [
-            'fields'    => [ 'Codigo', 'Categoria', 'Finalidade', 'Status' ],
+            'fields'    => [ 'Codigo', 'Categoria', 'Finalidade', 'Status', 'DataAtualizacao' ],
             'paginacao' => [ 'pagina' => $page, 'quantidade' => $per_page ],
         ];
         $resp = vit_call_api_get( $api_url, '/imoveis/listar', $api_key, $params, $log );
@@ -113,8 +113,9 @@ function vit_fetch_all_codes( $api_url, $api_key ) {
                 continue;
             }
             $meta_by_code[ $codigo ] = [
-                'Categoria'  => isset( $value['Categoria'] )  ? (string) $value['Categoria']  : '',
-                'Finalidade' => isset( $value['Finalidade'] ) ? (string) $value['Finalidade'] : '',
+                'Categoria'       => isset( $value['Categoria'] )       ? (string) $value['Categoria']       : '',
+                'Finalidade'      => isset( $value['Finalidade'] )      ? (string) $value['Finalidade']      : '',
+                'DataAtualizacao' => isset( $value['DataAtualizacao'] ) ? (string) $value['DataAtualizacao'] : '',
             ];
             $codes[] = $codigo;
         }

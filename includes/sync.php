@@ -3,7 +3,8 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-const VIT_SYNC_PLAN_OPTION = 'vit_sync_plan';
+const VIT_SYNC_PLAN_OPTION        = 'vit_sync_plan';
+const VIT_DAILY_SCAN_RESULT_OPT   = 'vit_daily_scan_result';
 
 // ────────────────────────────────────────────────────────────────────────
 // Helpers internos
@@ -11,7 +12,7 @@ const VIT_SYNC_PLAN_OPTION = 'vit_sync_plan';
 
 /**
  * Retorna todos os imóveis no WP que têm meta _vista_codigo.
- * @return array [ 'CODIGO' => ['post_id'=>int, 'title'=>string], … ]
+ * @return array [ 'CODIGO' => ['post_id'=>int, 'title'=>string, …], … ]
  */
 function vit_get_all_wp_properties() {
     $query = new WP_Query( [
@@ -29,12 +30,13 @@ function vit_get_all_wp_properties() {
             continue;
         }
         $result[ (string) $code ] = [
-            'code'      => (string) $code,
-            'post_id'   => (int) $post_id,
-            'title'     => get_the_title( $post_id ),
-            'wp_status' => (string) get_post_meta( $post_id, 'status',    true ),
-            'categoria' => (string) get_post_meta( $post_id, 'categoria', true ),
-            'cidade'    => (string) get_post_meta( $post_id, 'cidade',    true ),
+            'code'       => (string) $code,
+            'post_id'    => (int) $post_id,
+            'title'      => get_the_title( $post_id ),
+            'wp_status'  => (string) get_post_meta( $post_id, 'status',                true ),
+            'categoria'  => (string) get_post_meta( $post_id, 'categoria',             true ),
+            'cidade'     => (string) get_post_meta( $post_id, 'cidade',                true ),
+            'wp_updated' => (string) get_post_meta( $post_id, 'data_hora_atualizacao', true ),
         ];
     }
     return $result;
@@ -48,7 +50,6 @@ function vit_delete_property_fully( $post_id ) {
     $deleted_att = 0;
     $seen        = [];
 
-    // Filhos (attachments com post_parent = post_id)
     $children = get_children( [
         'post_parent' => $post_id,
         'post_type'   => 'attachment',
@@ -61,7 +62,6 @@ function vit_delete_property_fully( $post_id ) {
         $deleted_att++;
     }
 
-    // Galeria (IDs referenciados por meta)
     $galeria = get_post_meta( $post_id, 'galeria', true );
     if ( is_array( $galeria ) ) {
         foreach ( $galeria as $att_id ) {
@@ -73,7 +73,6 @@ function vit_delete_property_fully( $post_id ) {
         }
     }
 
-    // Thumbnail
     $thumb = (int) get_post_thumbnail_id( $post_id );
     if ( $thumb && ! isset( $seen[ $thumb ] ) ) {
         $seen[ $thumb ] = true;
@@ -86,66 +85,75 @@ function vit_delete_property_fully( $post_id ) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Handlers AJAX — todos usam o mesmo nonce do bulk (vit_bulk_nonce)
+// Núcleo do scan — reutilizado pelo AJAX e pelo cron diário
 // ────────────────────────────────────────────────────────────────────────
 
 /**
- * Varre o CRM e compara com o WP:
- *   novos    = ativos no CRM, não no WP
- *   removidos = no WP, mas não ativos no CRM
- *   amarelos  = estão nos dois lados mas overall != green
+ * Executa a varredura CRM ↔ WP e persiste o plano.
+ * Retorna array com os resultados ou WP_Error em caso de falha.
+ *
+ * Categorias:
+ *   novos           = ativos no CRM, não no WP
+ *   desativados_crm = no WP e no CRM com status inativo
+ *   fora_crm        = no WP mas não encontrado em nenhuma lista do CRM
+ *   amarelos        = em ambos, mas validação WP != green
+ *   atualizados     = em ambos e green, mas CRM tem DataAtualizacao mais recente
  */
-function vit_ajax_sync_scan() {
-    @set_time_limit( 300 );
-    check_ajax_referer( 'vit_bulk_nonce', 'nonce' );
-    if ( ! current_user_can( 'manage_options' ) ) {
-        wp_send_json_error( [ 'msg' => 'sem permissão' ], 403 );
-    }
-
+function vit_run_sync_scan() {
     $api_url = get_option( 'vit_api_url', '' );
     $api_key = get_option( 'vit_api_key', '' );
     if ( empty( $api_url ) || empty( $api_key ) ) {
-        wp_send_json_error( [ 'msg' => 'Configure a API URL e API Key antes.' ] );
+        return new WP_Error( 'no_config', 'Configure a API URL e API Key antes.' );
     }
 
-    // Lista de ativos no CRM
     $fetched = vit_fetch_all_codes( $api_url, $api_key );
     if ( is_wp_error( $fetched ) ) {
-        wp_send_json_error( [ 'msg' => 'Falha ao listar CRM: ' . $fetched->get_error_message() ] );
+        return new WP_Error( 'fetch_fail', 'Falha ao listar CRM: ' . $fetched->get_error_message() );
     }
-    $crm_active        = array_flip( $fetched['codes'] );
-    $crm_inactive_map  = $fetched['inactive_by_code'] ?? [];  // código → status real no CRM
 
-    // Guarda contra lista vazia: se o CRM não retornou nenhum imóvel ativo, a API provavelmente falhou.
-    // Sem este guarda, TODOS os imóveis do WP apareceriam como "desativados".
+    $crm_active       = array_flip( $fetched['codes'] );
+    $crm_inactive_map = $fetched['inactive_by_code'] ?? [];
+    $crm_meta         = $fetched['meta_by_code']     ?? [];
+
     if ( empty( $crm_active ) ) {
-        wp_send_json_error( [
-            'msg' => 'O CRM retornou 0 imóveis ativos. Verifique a conectividade e a API Key — a varredura foi cancelada para evitar remoções indevidas.',
-        ] );
+        return new WP_Error( 'empty_crm',
+            'O CRM retornou 0 imóveis ativos. Verifique a conectividade e a API Key — a varredura foi cancelada para evitar remoções indevidas.'
+        );
     }
 
-    // Imóveis no WP
     $wp_props = vit_get_all_wp_properties();
 
     $novos           = [];
-    $desativados_crm = [];   // no WP e no CRM, mas com status não-ativo no CRM
-    $fora_crm        = [];   // no WP mas não encontrado em nenhuma lista do CRM
+    $desativados_crm = [];
+    $fora_crm        = [];
     $amarelos        = [];
+    $atualizados     = [];  // green no WP, mas CRM tem timestamp mais recente
 
     foreach ( $crm_active as $code => $_ ) {
         if ( ! isset( $wp_props[ $code ] ) ) {
             $novos[] = [
                 'code' => $code,
-                'meta' => $fetched['meta_by_code'][ $code ] ?? [],
+                'meta' => $crm_meta[ $code ] ?? [],
             ];
+            continue;
+        }
+
+        $prop  = $wp_props[ $code ];
+        $valid = vit_validate_property( $prop['post_id'] );
+
+        if ( $valid['overall'] !== 'green' ) {
+            $amarelos[] = array_merge( $prop, [
+                'overall' => $valid['overall'],
+                'checks'  => $valid['checks'],
+                'score'   => $valid['score'],
+            ] );
         } else {
-            $prop  = $wp_props[ $code ];
-            $valid = vit_validate_property( $prop['post_id'] );
-            if ( $valid['overall'] !== 'green' ) {
-                $amarelos[] = array_merge( $prop, [
-                    'overall' => $valid['overall'],
-                    'checks'  => $valid['checks'],
-                    'score'   => $valid['score'],
+            // Verde: verifica se o CRM foi atualizado após o último import
+            $crm_updated = $crm_meta[ $code ]['DataAtualizacao'] ?? '';
+            $wp_updated  = $prop['wp_updated'];
+            if ( $crm_updated !== '' && $wp_updated !== '' && $crm_updated > $wp_updated ) {
+                $atualizados[] = array_merge( $prop, [
+                    'crm_updated' => $crm_updated,
                 ] );
             }
         }
@@ -156,12 +164,10 @@ function vit_ajax_sync_scan() {
             continue;
         }
         if ( isset( $crm_inactive_map[ $code ] ) ) {
-            // Existe no CRM mas com status não-ativo (Vendido, Locado, Suspenso, etc.)
             $desativados_crm[] = array_merge( $prop, [
                 'crm_status' => $crm_inactive_map[ $code ],
             ] );
         } else {
-            // Não encontrado em nenhuma lista do CRM → verificar manualmente
             $fora_crm[] = $prop;
         }
     }
@@ -171,6 +177,7 @@ function vit_ajax_sync_scan() {
         'desativados_crm' => $desativados_crm,
         'fora_crm'        => $fora_crm,
         'amarelos'        => $amarelos,
+        'atualizados'     => $atualizados,
         'crm_active_map'  => array_keys( $crm_active ),
         'scanned_at'      => time(),
         'api_url'         => $api_url,
@@ -178,17 +185,74 @@ function vit_ajax_sync_scan() {
     ];
     update_option( VIT_SYNC_PLAN_OPTION, $plan, false );
 
+    return $plan;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Cron diário
+// ────────────────────────────────────────────────────────────────────────
+
+function vit_cron_daily_scan(): void {
+    @set_time_limit( 300 );
+
+    $result = vit_run_sync_scan();
+
+    if ( is_wp_error( $result ) ) {
+        update_option( VIT_DAILY_SCAN_RESULT_OPT, [
+            'status'     => 'error',
+            'msg'        => $result->get_error_message(),
+            'scanned_at' => time(),
+        ], false );
+        return;
+    }
+
+    $has_changes = ! empty( $result['novos'] )
+                || ! empty( $result['desativados_crm'] )
+                || ! empty( $result['atualizados'] )
+                || ! empty( $result['fora_crm'] );
+
+    update_option( VIT_DAILY_SCAN_RESULT_OPT, [
+        'status'     => $has_changes ? 'changes' : 'clean',
+        'scanned_at' => $result['scanned_at'],
+        'counts'     => [
+            'novos'       => count( $result['novos'] ),
+            'desativados' => count( $result['desativados_crm'] ),
+            'atualizados' => count( $result['atualizados'] ),
+            'ausentes'    => count( $result['fora_crm'] ),
+            'amarelos'    => count( $result['amarelos'] ),
+        ],
+    ], false );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Handlers AJAX — todos usam o mesmo nonce do bulk (vit_bulk_nonce)
+// ────────────────────────────────────────────────────────────────────────
+
+function vit_ajax_sync_scan() {
+    @set_time_limit( 300 );
+    check_ajax_referer( 'vit_bulk_nonce', 'nonce' );
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( [ 'msg' => 'sem permissão' ], 403 );
+    }
+
+    $result = vit_run_sync_scan();
+    if ( is_wp_error( $result ) ) {
+        wp_send_json_error( [ 'msg' => $result->get_error_message() ] );
+    }
+
     wp_send_json_success( [
         'counts' => [
-            'novos'           => count( $novos ),
-            'desativados_crm' => count( $desativados_crm ),
-            'fora_crm'        => count( $fora_crm ),
-            'amarelos'        => count( $amarelos ),
+            'novos'           => count( $result['novos'] ),
+            'desativados_crm' => count( $result['desativados_crm'] ),
+            'fora_crm'        => count( $result['fora_crm'] ),
+            'amarelos'        => count( $result['amarelos'] ),
+            'atualizados'     => count( $result['atualizados'] ),
         ],
-        'novos'           => $novos,
-        'desativados_crm' => $desativados_crm,
-        'fora_crm'        => $fora_crm,
-        'amarelos'        => $amarelos,
+        'novos'           => $result['novos'],
+        'desativados_crm' => $result['desativados_crm'],
+        'fora_crm'        => $result['fora_crm'],
+        'amarelos'        => $result['amarelos'],
+        'atualizados'     => $result['atualizados'],
     ] );
 }
 
@@ -256,9 +320,6 @@ function vit_ajax_sync_refresh_one() {
     $api_url = $plan['api_url'] ?? get_option( 'vit_api_url', '' );
     $api_key = $plan['api_key'] ?? get_option( 'vit_api_key', '' );
 
-    // Busca o post pelo código diretamente — independe de scan prévio.
-    // categoria e finalidade são hints de rota para /imoveis/detalhes;
-    // todos os ~50 campos são re-buscados pela lista $text_fields abrangente.
     $q = new WP_Query( [
         'post_type'      => 'imoveis',
         'posts_per_page' => 1,
@@ -272,16 +333,19 @@ function vit_ajax_sync_refresh_one() {
     $result = vit_import_single_by_code( $api_url, $api_key, $code, $cat, $fin );
     $valid  = vit_validate_property( $result['post_id'] ?? 0 );
 
-    // Atualiza o plano de sync para refletir o novo status
+    // Atualiza o plano de sync (amarelos e atualizados) para refletir o novo status
     $fresh_plan = get_option( VIT_SYNC_PLAN_OPTION, [] );
-    if ( ! empty( $fresh_plan['amarelos'] ) ) {
-        if ( $valid['overall'] === 'green' ) {
-            $fresh_plan['amarelos'] = array_values( array_filter(
-                $fresh_plan['amarelos'],
+    $became_green = $valid['overall'] === 'green';
+
+    foreach ( [ 'amarelos', 'atualizados' ] as $section ) {
+        if ( empty( $fresh_plan[ $section ] ) ) continue;
+        if ( $became_green ) {
+            $fresh_plan[ $section ] = array_values( array_filter(
+                $fresh_plan[ $section ],
                 fn( $i ) => (string) ( $i['code'] ?? '' ) !== $code
             ) );
         } else {
-            foreach ( $fresh_plan['amarelos'] as &$item ) {
+            foreach ( $fresh_plan[ $section ] as &$item ) {
                 if ( (string) ( $item['code'] ?? '' ) === $code ) {
                     $item['overall'] = $valid['overall'];
                     $item['checks']  = $valid['checks'];
@@ -289,9 +353,10 @@ function vit_ajax_sync_refresh_one() {
                     break;
                 }
             }
+            unset( $item );
         }
-        update_option( VIT_SYNC_PLAN_OPTION, $fresh_plan, false );
     }
+    update_option( VIT_SYNC_PLAN_OPTION, $fresh_plan, false );
 
     $pid_ref = $result['post_id'] ?? 0;
     wp_send_json_success( [
@@ -328,9 +393,9 @@ function vit_ajax_sync_delete_one() {
     }
 
     // Segurança: só apaga se o código NÃO está entre os ativos do CRM
-    $plan    = get_option( VIT_SYNC_PLAN_OPTION, [] );
-    $code    = get_post_meta( $post_id, '_vista_codigo', true );
-    $active  = array_flip( (array) ( $plan['crm_active_map'] ?? [] ) );
+    $plan   = get_option( VIT_SYNC_PLAN_OPTION, [] );
+    $code   = get_post_meta( $post_id, '_vista_codigo', true );
+    $active = array_flip( (array) ( $plan['crm_active_map'] ?? [] ) );
     if ( isset( $active[ $code ] ) ) {
         wp_send_json_error( [ 'msg' => 'Imóvel ainda ativo no CRM. Execute uma nova varredura.' ] );
     }
@@ -338,8 +403,8 @@ function vit_ajax_sync_delete_one() {
     $deleted_att = vit_delete_property_fully( $post_id );
 
     wp_send_json_success( [
-        'code'                 => $code,
-        'post_id'              => $post_id,
-        'attachments_deleted'  => $deleted_att,
+        'code'                => $code,
+        'post_id'             => $post_id,
+        'attachments_deleted' => $deleted_att,
     ] );
 }

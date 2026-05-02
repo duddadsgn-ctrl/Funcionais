@@ -65,6 +65,41 @@ function vit_admin_page_html() {
         <hr>
 
         <?php
+        // ── Notificação da varredura automática diária ─────────────────────
+        $daily = get_option( VIT_DAILY_SCAN_RESULT_OPT, null );
+        if ( $daily ) {
+            $age_h = $daily['scanned_at'] ? round( ( time() - $daily['scanned_at'] ) / 3600, 1 ) : 0;
+            if ( $age_h <= 48 ) {
+                $scan_time = $daily['scanned_at'] ? wp_date( 'd/m H:i', $daily['scanned_at'] ) : '—';
+                if ( $daily['status'] === 'error' ) {
+                    echo '<div class="notice notice-error is-dismissible"><p>';
+                    echo '<strong>Varredura automática (' . esc_html( $scan_time ) . '):</strong> ';
+                    echo 'Falhou — ' . esc_html( $daily['msg'] ?? 'erro desconhecido' );
+                    echo '</p></div>';
+                } elseif ( $daily['status'] === 'changes' ) {
+                    $c = $daily['counts'] ?? [];
+                    $parts = [];
+                    if ( ! empty( $c['novos'] ) )       $parts[] = '<strong>' . (int) $c['novos']       . ' novos</strong>';
+                    if ( ! empty( $c['desativados'] ) )  $parts[] = '<strong>' . (int) $c['desativados'] . ' desativados no CRM</strong>';
+                    if ( ! empty( $c['atualizados'] ) )  $parts[] = '<strong>' . (int) $c['atualizados'] . ' atualizados no CRM</strong>';
+                    if ( ! empty( $c['ausentes'] ) )     $parts[] = '<strong>' . (int) $c['ausentes']    . ' ausentes do CRM</strong>';
+                    if ( ! empty( $c['amarelos'] ) )     $parts[] = '<strong>' . (int) $c['amarelos']    . ' parciais</strong>';
+                    echo '<div class="notice notice-warning is-dismissible">';
+                    echo '<p><strong>Varredura automática (' . esc_html( $scan_time ) . '):</strong> ';
+                    echo implode( ' | ', $parts );
+                    echo '. <a href="#vit-sync">Clique em "Varrer CRM" para ver detalhes e agir.</a></p>';
+                    echo '</div>';
+                }
+            }
+        }
+        // Próxima varredura automática
+        $next_scan_ts  = wp_next_scheduled( 'vit_daily_sync_scan' );
+        $next_scan_str = $next_scan_ts
+            ? human_time_diff( time(), $next_scan_ts ) . ' (às ' . wp_date( 'H:i', $next_scan_ts ) . ')'
+            : 'não agendada';
+        ?>
+
+        <?php
         $report = get_transient( 'vit_import_report' );
         if ( $report ) {
             $notice_class = ( $report['status'] === 'success' ) ? 'notice-success' : 'notice-error';
@@ -126,6 +161,7 @@ function vit_admin_page_html() {
 
             <div class="vit-bulk-controls">
                 <button type="button" id="vit-start" class="button button-primary">Iniciar Importação Completa</button>
+                <button type="button" id="vit-retry-all-yellow" class="button" style="display:none;">Atualizar todos os amarelos (0)</button>
             </div>
 
             <div class="vit-progress">
@@ -146,20 +182,20 @@ function vit_admin_page_html() {
         <div id="vit-sync">
             <h2>Atualização Geral</h2>
             <p style="color:#50575e;font-size:13px;margin-top:-6px;">
-                Compara o CRM com o WordPress: detecta imóveis novos, remove
-                desativados/ocultos (junto com todas as fotos) e passa o pente
-                fino em imóveis parciais (amarelos), buscando todos os campos
-                faltantes diretamente na API pelo código.
+                Compara o CRM com o WordPress: detecta imóveis novos, desativados, atualizados no CRM e
+                imóveis parciais (amarelos), buscando todos os campos faltantes diretamente na API pelo código.
+                Próxima varredura automática: <strong><?php echo esc_html( $next_scan_str ); ?></strong>.
             </p>
             <div class="vit-sync-controls">
                 <button type="button" id="vit-sync-scan" class="button button-primary">Varrer CRM</button>
             </div>
             <div id="vit-sync-status" class="vit-status"></div>
 
-            <div id="vit-sync-novos"       class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-desativados" class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-fora-crm"    class="vit-sync-section" style="display:none;"></div>
-            <div id="vit-sync-amarelos"    class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-novos"        class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-desativados"  class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-fora-crm"     class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-atualizados"  class="vit-sync-section" style="display:none;"></div>
+            <div id="vit-sync-amarelos"     class="vit-sync-section" style="display:none;"></div>
         </div>
 
     </div>

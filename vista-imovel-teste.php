@@ -58,3 +58,11 @@ add_action( 'init', function () {
     }
 } );
 
+// Cron: varredura diária CRM ↔ WP
+add_action( 'vit_daily_sync_scan', 'vit_cron_daily_scan' );
+add_action( 'init', function () {
+    if ( ! wp_next_scheduled( 'vit_daily_sync_scan' ) ) {
+        wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', 'vit_daily_sync_scan' );
+    }
+} );
+
